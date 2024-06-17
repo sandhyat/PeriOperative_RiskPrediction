@@ -1,6 +1,6 @@
 This repository contains the source code for various approaches that can used for postoperative complication prediction.
 
-### Overview
+## Overview
 
 In brief, there are two approaches: 
 1) prediction classifiers are learnt end to end in a supervised manner using different combination of data modalities, 
@@ -20,10 +20,10 @@ Based on varying algorithm complexity the approaches mentioned can be explained 
 3) A prediction classifier that uses all the data that is available retrospectively (including the outcomes) for self supervised learning (commonly known as pretraining) and using everything before the end of surgery for training the classifiers. One can use many of the techniques currently available for pretraining including contrastive learning for the first stage of representation learning. For the second stage of classifier learning, even training a shallow classifier suffices sometimes.
 ![MVCL Architecture](/Images/MVCL_SelfSupervised.png)
 
-### Setups
+## Setups
 
 
-##### 1) Data and Architecture adaptation format  
+#### 1) Data and Architecture adaptation format  
 
 **For end-to-end supervised setup binary classification**
 Code is available in `End_to_end_supervised/`
@@ -40,7 +40,7 @@ Code is available in `Two_stage_selfsupervised/`
 
 1) `train_modular.py`: Calls `Multiview_CL_modular.py` for representation learning using all the modalities that are specified in the arguments. Once trained, calls `classification.py` to perform the downstream task or evaluate the learnt representation.
 
-##### 2) Requirements and implementation
+#### 2) Requirements and implementation
 
 One can use the `requirements.txt` to install the dependencies. One can also run the codes inside a *docker container* using the docker121720/pytorch-for-ts:0.5 image.
 
@@ -61,6 +61,6 @@ By default, for the downstream classification task (when ``` --eval ``` is True)
 If you are interested in using the learnt representation for preop modalities too, add ``` --all_rep ``` to the argument list. 
 
 
-##### 3) Hyperparameter tuning
+#### 3) Hyperparameter tuning
 
 `Generating_HP_grid.py` is used to create a sobol grid and writes them in a format that can be submitted on a high performance computing server. It creates a file that can be launched using bash directly.
