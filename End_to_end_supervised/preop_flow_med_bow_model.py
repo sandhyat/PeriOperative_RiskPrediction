@@ -333,11 +333,10 @@ class TS_lstm_Med_index(nn.Module):
         reg_wd = 0
         all_rep = []
         seq_len = data_dict['endtimes']
-
+        my_device = data_dict[self.modality_to_use[0]].device
         """ preops MLP"""
         if 'preops' in self.modality_to_use:
             preops = data_dict['preops']
-            my_device = next(self.hidden_layers[0].parameters()).device
             preop_path = torch.nn.ReLU()(self.hidden_layers[0](preops) )
             if(len(self.hidden_layers) > 1) :
               for thisindex in range(len(self.hidden_layers)-1 ):
@@ -927,11 +926,10 @@ class TS_Transformer_Med_index(nn.Module):
 
         reg_wd = 0
         all_rep = []
-
+        my_device = data_dict[self.modality_to_use[0]].device
         """ preops MLP"""
         if 'preops' in self.modality_to_use:
             preops = data_dict['preops']
-            my_device = next(self.hidden_layers[0].parameters()).device
             preop_path = torch.nn.ReLU()(self.hidden_layers[0](preops) )
             if(len(self.hidden_layers) > 1) :
               for thisindex in range(len(self.hidden_layers)-1 ):
