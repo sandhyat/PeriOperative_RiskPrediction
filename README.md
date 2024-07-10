@@ -31,7 +31,7 @@ Code is available in `End_to_end_supervised/`
 1) `Preops_processing.py`: Prepares the preoperative data including one hot encoding, missingness imputation, normalization and saves the metadata into json. Also, creates the train test partitioning on the dataset. 
 2) `Preops_GBT_baseline.py`: Trains a shallow or basic feed forward model on data available before the surgery starts.
 3) `Training_with_TimeSeries.py`: Jointly trains a deep model (LSTM/Transformer) using all the data modalities available at the end of surgery.
-4) `preop_flow_med_bow_model.py`: Contains various deep learning achitectures in the model class format that are callable in the `Training_with_TimeSeries.py` file.
+4) `preop_flow_med_bow_model.py`: Contains various deep learning architectures in the model class format that are callable in the `Training_with_TimeSeries.py` file.
 
 **For two stage self-supervised setup binary classification**
 Currently, for time series code for [TS2Vec](https://github.com/yuezhihan/ts2vec) is being used, for tabular preops and cbow [SCARF](https://github.com/clabrugere/pytorch-scarf/tree/master) method's code is being used, and for the outcomes there is only a projection head.

@@ -47,7 +47,7 @@ def normalization(data0, mode, normalizing_value, contin_var):
         data[contin_var] = data[contin_var] / max_v
     return data
 
-def preprocess_train(preops, skipPreops,task, y_outcome=None, binary_outcome=False, test_size=0.2, valid_size=0.1,
+def preprocess_train(preops,task, y_outcome=None, binary_outcome=False, test_size=0.2, valid_size=0.1,
                      random_state=101):
     if 'orlogid_encoded' in preops.columns:  # this is being done to have generality when this code is ran on its own and the data will have orlogids in comparison to when this function will be called fomr the model training file
         preops.rename({"orlogid_encoded": "person_integer"}, axis=1, inplace=True)
@@ -124,53 +124,51 @@ def preprocess_train(preops, skipPreops,task, y_outcome=None, binary_outcome=Fal
         else:
             ordinal_variables.append(i)
 
-    if (not skipPreops):
-        for a in preops.columns:
-            if preops[a].dtype == 'bool':
-                preops[a] = preops[a].astype('int32')
-            if preops[a].dtype == 'int32' or preops[a].dtype == 'int64':
-                if len(preops[a].unique()) < 10 and len(preops[a].unique()) > 2 and (a not in ordinal_variables):
-                    preops[a] = preops[a].astype('category')
-                    categorical_variables.append(a)
-            if len(preops[a].unique()) <= 2 and (a not in ordinal_variables+binary_variables+categorical_variables+continuous_variables):
-                binary_variables.append(a)
-            # this change in dtype is not possible because there are missing values.
-            # Not changing the dtype is not affecting anything down the line because the imputation for ordinal variables is anyway done seperately.
-            # if a in ordinal_variables:
-            #   preops[a] = preops[a].astype('int32')
-            if preops[a].dtype == 'O' and (a not in ordinal_variables+binary_variables+categorical_variables+continuous_variables):
+    for a in preops.columns:
+        if preops[a].dtype == 'bool':
+            preops[a] = preops[a].astype('int32')
+        if preops[a].dtype == 'int32' or preops[a].dtype == 'int64':
+            if len(preops[a].unique()) < 10 and len(preops[a].unique()) > 2 and (a not in ordinal_variables):
                 preops[a] = preops[a].astype('category')
                 categorical_variables.append(a)
-
-    if (not skipPreops):
-        # following inf is more or less hardcoded based on how the data was at the training time.
-        categorical_variables.append('SurgService_Name')
-        # preops['SurgService_Name'].replace(['NULL', ''], [np.NaN, np.NaN], inplace=True)
-
-        dif_dtype = [a for a in preops.columns if preops[a].dtype not in ['int32', 'int64', 'float64',
-                                                                          'category', 'O']]  # columns with non-numeric datatype; this was used at the code development time
-        for a in dif_dtype:
+        if len(preops[a].unique()) <= 2 and (a not in ordinal_variables+binary_variables+categorical_variables+continuous_variables):
+            binary_variables.append(a)
+        # this change in dtype is not possible because there are missing values.
+        # Not changing the dtype is not affecting anything down the line because the imputation for ordinal variables is anyway done seperately.
+        # if a in ordinal_variables:
+        #   preops[a] = preops[a].astype('int32')
+        if preops[a].dtype == 'O' and (a not in ordinal_variables+binary_variables+categorical_variables+continuous_variables):
             preops[a] = preops[a].astype('category')
             categorical_variables.append(a)
 
-        # this is kind of hardcoded; check your data beforehand for this; fixed this
-        temp_list = [i for i in preops['PlannedAnesthesia'].unique() if np.isnan(i)] + [i for i in preops[
-            'PlannedAnesthesia'].unique() if math.isinf(i)]
-        if temp_list != []:
-            preops['PlannedAnesthesia'].replace(temp_list, np.NaN,
-                                                inplace=True)  # this is done because there were two values for missing token (nan anf -inf)
-        categorical_variables.append('PlannedAnesthesia')
+    # following inf is more or less hardcoded based on how the data was at the training time.
+    categorical_variables.append('SurgService_Name')
+    # preops['SurgService_Name'].replace(['NULL', ''], [np.NaN, np.NaN], inplace=True)
 
-        # remove if there are any duplicates in any of the variable name lists
-        categorical_variables = [*set(categorical_variables)]
+    dif_dtype = [a for a in preops.columns if preops[a].dtype not in ['int32', 'int64', 'float64',
+                                                                      'category', 'O']]  # columns with non-numeric datatype; this was used at the code development time
+    for a in dif_dtype:
+        preops[a] = preops[a].astype('category')
+        categorical_variables.append(a)
 
-        continuous_variables = continuous_variables + [i for i in preops.columns if
-                                                       i not in (
-                                                                   binary_variables + categorical_variables + ordinal_variables)]
-        continuous_variables = [*set(continuous_variables)]
+    # this is kind of hardcoded; check your data beforehand for this; fixed this
+    temp_list = [i for i in preops['PlannedAnesthesia'].unique() if np.isnan(i)] + [i for i in preops[
+        'PlannedAnesthesia'].unique() if math.isinf(i)]
+    if temp_list != []:
+        preops['PlannedAnesthesia'].replace(temp_list, np.NaN,
+                                            inplace=True)  # this is done because there were two values for missing token (nan anf -inf)
+    categorical_variables.append('PlannedAnesthesia')
 
-        continuous_variables.remove(
-            'person_integer')  # this var went into categorical due to its initial datatype of being an object
+    # remove if there are any duplicates in any of the variable name lists
+    categorical_variables = [*set(categorical_variables)]
+
+    continuous_variables = continuous_variables + [i for i in preops.columns if
+                                                   i not in (
+                                                               binary_variables + categorical_variables + ordinal_variables)]
+    continuous_variables = [*set(continuous_variables)]
+
+    continuous_variables.remove(
+        'person_integer')  # this var went into categorical due to its initial datatype of being an object
 
     # masking operation; need not worry about bow_na variable as it is already a mask
     preops_mask[continuous_variables] = (preops_mask[continuous_variables].notnull()).astype('int')
@@ -186,16 +184,15 @@ def preprocess_train(preops, skipPreops,task, y_outcome=None, binary_outcome=Fal
     meta_Data["levels"] = {}
 
     preops_ohe = preops.copy()
-    if (not skipPreops):
-        preops_ohe.drop(columns=categorical_variables, inplace=True)
-        import itertools
-        encoded_variables = list()
-        for i in categorical_variables:
-            meta_Data["levels"][i] = list(preops[i].cat.categories)
-            temp = pd.get_dummies(preops[i], dummy_na=True, prefix=i)
-            preops_ohe = pd.concat([preops_ohe, temp], axis=1)
-            encoded_variables.append([column for column in temp.columns])
-        encoded_variables = list(itertools.chain.from_iterable(encoded_variables))
+    preops_ohe.drop(columns=categorical_variables, inplace=True)
+    import itertools
+    encoded_variables = list()
+    for i in categorical_variables:
+        meta_Data["levels"][i] = list(preops[i].cat.categories)
+        temp = pd.get_dummies(preops[i], dummy_na=True, prefix=i)
+        preops_ohe = pd.concat([preops_ohe, temp], axis=1)
+        encoded_variables.append([column for column in temp.columns])
+    encoded_variables = list(itertools.chain.from_iterable(encoded_variables))
 
     # masking operation for categorical observations: make everything zero except for the null column, that is supposed to be as it is
     preops_mask.drop(columns=categorical_variables, inplace=True)
@@ -237,56 +234,53 @@ def preprocess_train(preops, skipPreops,task, y_outcome=None, binary_outcome=Fal
     test.drop(columns="person_integer", inplace=True)
 
     # mean imputing and scaling the continuous variables
+    train[continuous_variables].fillna(train[continuous_variables].mean(), inplace=True)  ## warning about copy
+    valid[continuous_variables].fillna(train[continuous_variables].mean(), inplace=True)
+    test[continuous_variables].fillna(train[continuous_variables].mean(), inplace=True)
+    # this is done because nan that are of float type is not recognised as missing byt above commands
+    for i in continuous_variables:
+        if train[i].isna().any() == True or valid[i].isna().any() == True or test[i].isna().any() == True:
+            train[i].replace(train[i].unique().min(), train[i].mean(), inplace=True)
+            valid[i].replace(valid[i].unique().min(), train[i].mean(), inplace=True)
+            test[i].replace(test[i].unique().min(), train[i].mean(), inplace=True)
 
-    if (not skipPreops):
-        train[continuous_variables].fillna(train[continuous_variables].mean(), inplace=True)  ## warning about copy
-        valid[continuous_variables].fillna(train[continuous_variables].mean(), inplace=True)
-        test[continuous_variables].fillna(train[continuous_variables].mean(), inplace=True)
-        # this is done because nan that are of float type is not recognised as missing byt above commands
-        for i in continuous_variables:
-            if train[i].isna().any() == True or valid[i].isna().any() == True or test[i].isna().any() == True:
-                train[i].replace(train[i].unique().min(), train[i].mean(), inplace=True)
-                valid[i].replace(valid[i].unique().min(), train[i].mean(), inplace=True)
-                test[i].replace(test[i].unique().min(), train[i].mean(), inplace=True)
+    meta_Data["train_mean_cont"] = [train[i].mean() for i in continuous_variables]
 
-        meta_Data["train_mean_cont"] = [train[i].mean() for i in continuous_variables]
-
-        normalizing_values_cont = {}
-        normalizing_values_cont['cont_names'] = continuous_variables
-        normalizing_values_cont['mean'] = list(train[continuous_variables].mean(axis=0).values)
-        normalizing_values_cont['std'] = list(train[continuous_variables].std(axis=0).values)
-        normalizing_values_cont['min'] = list(train[continuous_variables].min(axis=0).values)
-        normalizing_values_cont['max'] = list(train[continuous_variables].max(axis=0).values)
-        train = normalization(train, 'mean_std', normalizing_values_cont, continuous_variables)
-        valid = normalization(valid, 'mean_std', normalizing_values_cont, continuous_variables)
-        test = normalization(test, 'mean_std', normalizing_values_cont, continuous_variables)
-        meta_Data['norm_value_cont'] = normalizing_values_cont
+    normalizing_values_cont = {}
+    normalizing_values_cont['cont_names'] = continuous_variables
+    normalizing_values_cont['mean'] = list(train[continuous_variables].mean(axis=0).values)
+    normalizing_values_cont['std'] = list(train[continuous_variables].std(axis=0).values)
+    normalizing_values_cont['min'] = list(train[continuous_variables].min(axis=0).values)
+    normalizing_values_cont['max'] = list(train[continuous_variables].max(axis=0).values)
+    train = normalization(train, 'mean_std', normalizing_values_cont, continuous_variables)
+    valid = normalization(valid, 'mean_std', normalizing_values_cont, continuous_variables)
+    test = normalization(test, 'mean_std', normalizing_values_cont, continuous_variables)
+    meta_Data['norm_value_cont'] = normalizing_values_cont
 
     # median Imputing_ordinal variables
 
-    if (not skipPreops):
-        # imputing
-        for i in ordinal_variables:
-            if np.isnan(preops[i].unique().min()) == True:
-                train[i].replace(train[i].unique().min(), train[i].median(), inplace=True)
-                valid[i].replace(valid[i].unique().min(), train[i].median(), inplace=True)
-                test[i].replace(test[i].unique().min(), train[i].median(), inplace=True)
+    # imputing
+    for i in ordinal_variables:
+        if np.isnan(preops[i].unique().min()) == True:
+            train[i].replace(train[i].unique().min(), train[i].median(), inplace=True)
+            valid[i].replace(valid[i].unique().min(), train[i].median(), inplace=True)
+            test[i].replace(test[i].unique().min(), train[i].median(), inplace=True)
 
-        meta_Data["train_median_ord"] = [train[i].median() for i in ordinal_variables]
+    meta_Data["train_median_ord"] = [train[i].median() for i in ordinal_variables]
 
-        # normalizing
-        normalizing_values_ord = {}
-        normalizing_values_ord["ord_names"] = ordinal_variables
-        normalizing_values_ord['mean'] = list(train[ordinal_variables].mean(axis=0).values)
-        normalizing_values_ord['std'] = list(train[ordinal_variables].std(axis=0).values)
-        normalizing_values_ord['min'] = list(train[ordinal_variables].min(axis=0).values)
-        normalizing_values_ord['max'] = list(train[ordinal_variables].max(axis=0).values)
+    # normalizing
+    normalizing_values_ord = {}
+    normalizing_values_ord["ord_names"] = ordinal_variables
+    normalizing_values_ord['mean'] = list(train[ordinal_variables].mean(axis=0).values)
+    normalizing_values_ord['std'] = list(train[ordinal_variables].std(axis=0).values)
+    normalizing_values_ord['min'] = list(train[ordinal_variables].min(axis=0).values)
+    normalizing_values_ord['max'] = list(train[ordinal_variables].max(axis=0).values)
 
-        train = normalization(train, 'mean_std', normalizing_values_ord, ordinal_variables)
-        valid = normalization(valid, 'mean_std', normalizing_values_ord, ordinal_variables)
-        test = normalization(test, 'mean_std', normalizing_values_ord, ordinal_variables)
+    train = normalization(train, 'mean_std', normalizing_values_ord, ordinal_variables)
+    valid = normalization(valid, 'mean_std', normalizing_values_ord, ordinal_variables)
+    test = normalization(test, 'mean_std', normalizing_values_ord, ordinal_variables)
 
-        meta_Data['norm_value_ord'] = normalizing_values_ord
+    meta_Data['norm_value_ord'] = normalizing_values_ord
 
     if (sum(valid.isna().any()) > 0) or (sum(test.isna().any()) > 0) or (sum(train.isna().any()) > 0):
         raise AssertionError("Processed data has nans")
