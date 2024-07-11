@@ -208,7 +208,8 @@ torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 np.random.seed(args.randomSeed)
 
-data_dir = '/input/'
+
+# data_dir = '/input/'
 
 # reading the preop and outcome feather files
 # preops = feather.read_feather(data_dir + 'preops_reduced_for_training.feather')
@@ -365,7 +366,7 @@ if 'preops' not in modality_to_use:
     test_index = test.index
 
     if args.task == 'icu':  # this part is basically dropping the planned icu cases from the evaluation set
-        test_index = preops.iloc[test_index][preops.iloc[test_index]['plannedDispo'] != 3]['plannedDispo'].index
+        test_index = preops.iloc[test_index][preops.iloc[test_index]['plannedDispo'] != 'ICU']['plannedDispo'].index
 
 if 'preops' in modality_to_use:
     # this is being used because we will be adding the problem list and pmh as a seperate module in this file too
@@ -407,8 +408,8 @@ if 'preops' in modality_to_use:
                                                                                                                binary_outcome=binary_outcome,
                                                                                                                valid_size=0.05)  # change back to 0.00005
 
-    if args.task == 'icu':  # this part is basically dropping the planned icu cases from the evaluation set
-        test_index = preops.iloc[test_index][preops.iloc[test_index]['plannedDispo'] != 3]['plannedDispo'].index
+    if args.task == 'icu':  # this part is basically dropping the planned icu cases from the evaluation set (value of plannedDispo are numeric after processing; before processing everything should be compared with actual valuess )
+        test_index = preops.iloc[test_index][preops.iloc[test_index]['plannedDispo'] != 'ICU']['plannedDispo'].index
         preops_te = preops_te.iloc[test_index]
 
     preop_mask_counter = 0
