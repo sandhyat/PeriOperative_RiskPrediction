@@ -843,7 +843,6 @@ class TS_Transformer_Med_index(nn.Module):
                 0, (self.e_dim_med_ids+self.e_dim_flow), 2, dtype=torch.float32) / (self.e_dim_med_ids+self.e_dim_flow))
             self.P[:, :, 0::2] = torch.sin(X)
             self.P[:, :, 1::2] = torch.cos(X)
-            breakpoint()
             self.class_token_TS = torch.nn.Parameter(torch.randn(1, 1, self.e_dim_med_ids + self.e_dim_flow))  # "global information"
             torch.nn.init.normal_(self.class_token_TS, std=0.08)
             if (self.e_dim_med_ids + self.e_dim_flow) % self.AttTS_Heads == 0:
@@ -1319,7 +1318,6 @@ class TS_Attention_Med_index(nn.Module):
             self.P[:, :, 1::2] = torch.cos(X)
 
             # self.class_token_TS = torch.nn.Parameter(torch.randn(1, 1, self.e_dim_med_ids + self.e_dim_flow))  # "global information"
-            # breakpoint()
             # self.class_token_TS = self.preop_init_layer_med + self.preop_init_layer_flow
             # torch.nn.init.normal_(self.class_token_TS, std=0.08)
             if (self.e_dim_med_ids + self.e_dim_flow) % self.AttTS_Heads == 0:
