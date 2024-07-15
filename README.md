@@ -32,6 +32,9 @@ Code is available in `End_to_end_supervised/`
 2) `Preops_GBT_baseline.py`: Trains a shallow or basic feed forward model on data available before the surgery starts.
 3) `Training_with_TimeSeries.py`: Jointly trains a deep model (LSTM/Transformer) using all the data modalities available at the end of surgery.
 4) `preop_flow_med_bow_model.py`: Contains various deep learning architectures in the model class format that are callable in the `Training_with_TimeSeries.py` file.
+5) `Training_with_ts_Optuna_hp_tuning.py`: Used for hyperparameter tuning using Optuna as an off the shelf method. Similar functionalities are `Training_with_TimeSeries.py` but in the context of hyper parameter tuning. Currently, the best trial is not saved and the inbuilt storage of optuna is not used (for future).
+6) `ts_model_class_Optuna_hp_tune.py`: Mostly, same as `preop_flow_med_bow_model.py` but used during hp tuning. Could be removed in future.
+7) `ts_optuna_hp_tuning_combined.sh`: Bash file that runs the hp tuning file `Training_with_ts_Optuna_hp_tuning.py` for different modality ablations and with differnt randomseeds.
 
 **For two stage self-supervised setup binary classification**
 Currently, for time series code for [TS2Vec](https://github.com/yuezhihan/ts2vec) is being used, for tabular preops and cbow [SCARF](https://github.com/clabrugere/pytorch-scarf/tree/master) method's code is being used, and for the outcomes there is only a projection head.
@@ -42,16 +45,16 @@ Code is available in `Two_stage_selfsupervised/`
 
 #### 2) Requirements and implementation
 
-One can use the `requirements.txt` to install the dependencies. One can also run the codes inside a *docker container* using the docker121720/pytorch-for-ts:0.5 image.
+One can use the `requirements.txt` to install the dependencies. One can also run the codes inside a *docker container* using the docker121720/pytorch-for-ts:0.95 image. Optuna will be needed if you are running the HP tuning file `Training_with_ts_Optuna_hp_tuning.py` directly.
 
 **Example for end-to-end supervised setup binary classification**
 ```
-docker run --rm --gpus all --privileged -v '< /PATH TO THE INPUT DATA/ >:/input/' -v '< /PATH TO THE SCRIPTS/ >:/codes/' -v '< /PATH TO THE SAVING THE OUTPUT RESULTS/ >:/output/' docker121720/pytorch-for-ts:0.5 python /codes/Training_with_TimeSeries.py --nameinfo="testing_Full_fixed_seed_withmaskOversamplingEarlyStoppingLR" --outputcsv="test_binary_outcomes.csv" --task='icu' --preopsDepth=6 --preopsWidth=20 --preopsWidthFinal=16 --bowDepth=5 --bowWidth=90 --bowWidthFinal=20 --lstmMedEmbDim=16 --lstmMedDepth=4 --lstmMedWidth=40 --lstmFlowDepth=4 --lstmFlowWidth=40 --LRPatience=3 --batchSize=120 --lstmMedDrop=0.1212 --lstmFlowDrop=0.0165 --finalDrop=0.3001 --learningRate=0.0002 --learningRateFactor=0.2482 --preopsL2=0.0004 --preopsL1=0.0029 --bowL2=0.0003 --bowL1=0.0042 --lstmMedL2=0.0003 --lstmFlowL2=0.0009 --randomSeed=350 --includeMissingnessMasks --overSampling
+docker run --rm --gpus all --privileged -v '< /PATH TO THE INPUT DATA/ >:/input/' -v '< /PATH TO THE SCRIPTS/ >:/codes/' -v '< /PATH TO THE SAVING THE OUTPUT RESULTS/ >:/output/' docker121720/pytorch-for-ts:0.95 python /codes/Training_with_TimeSeries.py --nameinfo="testing_Full_fixed_seed_withmaskOversamplingEarlyStoppingLR" --outputcsv="test_binary_outcomes.csv" --task='icu' --preopsDepth=6 --preopsWidth=20 --preopsWidthFinal=16 --bowDepth=5 --bowWidth=90 --bowWidthFinal=20 --lstmMedEmbDim=16 --lstmMedDepth=4 --lstmMedWidth=40 --lstmFlowDepth=4 --lstmFlowWidth=40 --LRPatience=3 --batchSize=120 --lstmMedDrop=0.1212 --lstmFlowDrop=0.0165 --finalDrop=0.3001 --learningRate=0.0002 --learningRateFactor=0.2482 --preopsL2=0.0004 --preopsL1=0.0029 --bowL2=0.0003 --bowL1=0.0042 --lstmMedL2=0.0003 --lstmFlowL2=0.0009 --randomSeed=350 --includeMissingnessMasks --overSampling
 ```
 
 **Example for two stage self-supervised setup binary classification**
 ```
-docker run --rm --gpus all --privileged -v '< /PATH TO THE INPUT DATA/ >:/input/' -v '< /PATH TO THE SCRIPTS/ >:/codes/' -v '< /PATH TO THE SAVING THE OUTPUT RESULTS/ >:/output/' docker121720/pytorch-for-ts:0.5 python /codes/train_modular.py Flowsheets F_output --eval --outcome=icu
+docker run --rm --gpus all --privileged -v '< /PATH TO THE INPUT DATA/ >:/input/' -v '< /PATH TO THE SCRIPTS/ >:/codes/' -v '< /PATH TO THE SAVING THE OUTPUT RESULTS/ >:/output/' docker121720/pytorch-for-ts:0.95 python /codes/train_modular.py Flowsheets F_output --eval --outcome=icu
 ```
 Based on the other available modalities, following can be added or removed ``` --preops --meds --alerts --pmh --problist --homemeds --postopcomp  ``` to the argument list. 
 
