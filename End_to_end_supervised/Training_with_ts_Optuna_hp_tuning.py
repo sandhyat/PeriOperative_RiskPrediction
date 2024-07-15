@@ -191,7 +191,7 @@ def objective(trial, args):
         set(end_of_case_times['orlogid_encoded'].values)).intersection(
         set(preops['orlogid_encoded'].values)))
 
-    if True:
+    if False:
         combined_case_set = np.random.choice(combined_case_set, 2500, replace=False)
 
     outcome_df = outcome_df.loc[outcome_df['orlogid_encoded'].isin(combined_case_set)]
@@ -399,11 +399,22 @@ def objective(trial, args):
         config['input_shape_hm'] = hm_input_dim
         config['Att_HM_Agg'] = args.AttentionhomeMedsAgg
         if config['Att_HM_Agg'] == True:
+            ctr=0
             temp_flag = 0
             while temp_flag==0:
-                config['Att_HM_agg_Heads'] = trial.suggest_int('Att_HM_agg_Heads', 2,8)
+                if (ctr == 0) and (config['input_shape_hm']) % 2 == 0:
+                    config['Att_HM_agg_Heads'] = trial.suggest_int('Att_HM_agg_Heads', 2,8, step =2)
+                elif (ctr == 0):
+                    config['Att_HM_agg_Heads'] = trial.suggest_int('Att_HM_agg_Heads', 2, 8)
                 if config['input_shape_hm'] % config['Att_HM_agg_Heads'] ==0:
                     temp_flag=1
+                if temp_flag==0:
+                    if (config['input_shape_hm']) % 2 == 0:
+                        config['Att_HM_agg_Heads'] = trial.suggest_int('Att_HM_agg_Heads'+str(ctr), 2, 10, step=2)
+                    else:
+                        config['Att_HM_agg_Heads'] = trial.suggest_int('Att_HM_agg_Heads'+str(ctr), 2, 10)
+
+                ctr = ctr+1
 
     if 'pmh' in modality_to_use:
 
@@ -450,11 +461,22 @@ def objective(trial, args):
         config['input_shape_pmh'] = pmh_input_dim
         config['Att_pmh_Agg'] = args.AttentionPmhAgg
         if config['Att_pmh_Agg'] == True:
+            ctr=0
             temp_flag = 0
             while temp_flag==0:
-                config['AttPmhAgg_Heads'] = trial.suggest_int('AttPmhAgg_Heads', 2,8)
+                if (ctr == 0) and (config['input_shape_pmh']) % 2 == 0:
+                    config['AttPmhAgg_Heads'] = trial.suggest_int('AttPmhAgg_Heads', 2,8, step =2)
+                elif (ctr == 0):
+                    config['AttPmhAgg_Heads'] = trial.suggest_int('AttPmhAgg_Heads', 2, 8)
                 if config['input_shape_pmh'] % config['AttPmhAgg_Heads'] ==0:
                     temp_flag=1
+                if temp_flag==0:
+                    if (config['input_shape_pmh']) % 2 == 0:
+                        config['AttPmhAgg_Heads'] = trial.suggest_int('AttPmhAgg_Heads'+str(ctr), 2, 10, step=2)
+                    else:
+                        config['AttPmhAgg_Heads'] = trial.suggest_int('AttPmhAgg_Heads'+str(ctr), 2, 10)
+
+                ctr = ctr+1
 
     if 'problist' in modality_to_use:
         prob_list_emb_sb = pd.read_csv(data_dir + 'preproblems_sherbert.csv')
@@ -678,7 +700,7 @@ def objective(trial, args):
 
         config['v_units'] = vocab_len_units
         config['v_med_ids'] = vocab_len_med_ids
-        config['e_dim_med_ids'] = trial.suggest_int('e_dim_med_ids', 10,20)
+        config['e_dim_med_ids'] = trial.suggest_int('e_dim_med_ids', 10,20, step=2)
         config['e_dim_units'] = False  # hardcoded for now
         config['preops_init_med'] = trial.suggest_categorical("preops_init_med", [True, False])
         config['lstm_hid'] = trial.suggest_int('lstm_hid', 10,40)
@@ -693,11 +715,22 @@ def objective(trial, args):
         config['group_end_list'] = group_end
         config['Att_MedAgg'] = args.AttentionMedAgg
         if config['Att_MedAgg'] == True:
+            ctr=0
             temp_flag = 0
             while temp_flag==0:
-                config['AttMedAgg_Heads'] = trial.suggest_int('AttMedAgg_Heads', 2,8)
+                if (ctr == 0) and (config['e_dim_med_ids']) % 2 == 0:
+                    config['AttMedAgg_Heads'] = trial.suggest_int('AttMedAgg_Heads', 2,8, step =2)
+                elif (ctr == 0):
+                    config['AttMedAgg_Heads'] = trial.suggest_int('AttMedAgg_Heads', 2, 8)
                 if config['e_dim_med_ids'] % config['AttMedAgg_Heads'] ==0:
                     temp_flag=1
+                if temp_flag==0:
+                    if (config['e_dim_med_ids']) % 2 == 0:
+                        config['AttMedAgg_Heads'] = trial.suggest_int('AttMedAgg_Heads'+str(ctr), 2, 10, step=2)
+                    else:
+                        config['AttMedAgg_Heads'] = trial.suggest_int('AttMedAgg_Heads'+str(ctr), 2, 10)
+
+                ctr = ctr+1
 
     outcome_df.drop(["orlogid_encoded"], axis=1, inplace=True)
     outcome_df.reset_index(inplace=True)
@@ -801,7 +834,7 @@ def objective(trial, args):
     device = torch.device('cuda')
 
     if args.modelType == 'transformer':
-        config['e_dim_flow'] =  trial.suggest_int('e_dim_flow', 10,20)  # this is needed because when combining the meds and flowsheets for attention, meds have been emmbedded but flowsheets are raw
+        config['e_dim_flow'] =  trial.suggest_int('e_dim_flow', 10,20, step=2)  # this is needed because when combining the meds and flowsheets for attention, meds have been emmbedded but flowsheets are raw
         config['AttTS_depth'] = trial.suggest_int('AttTS_depth', 4,6)
         config['cnn_before_Att'] = trial.suggest_categorical("cnn_before_Att", [True, False])
         if config['cnn_before_Att'] == True:
@@ -811,33 +844,46 @@ def objective(trial, args):
 
         # for getting a compatible attention head value
         temp_flag = 0
-
         ctr = 0 # this is such a round about way to get this condition satisfied but can't find any other way because once a name has been assigned optuna doesn't let it get duplicated
         while temp_flag == 0:
             if 'meds' in modality_to_use and 'flow' in modality_to_use:
                 if (ctr==0) and (config['e_dim_med_ids'] + config['e_dim_flow']) % 2 ==0:
                     config['AttTS_Heads'] = trial.suggest_int('AttTS_Heads', 2, 10, step=2)
-                else:
+                elif (ctr==0):
                     config['AttTS_Heads'] = trial.suggest_int('AttTS_Heads', 1, 10)
                 if (config['e_dim_med_ids'] + config['e_dim_flow']) % config['AttTS_Heads'] == 0:
                     temp_flag = 1
+                if temp_flag == 0:
+                    if (config['e_dim_med_ids'] + config['e_dim_flow']) % 2 == 0:
+                        config['AttTS_Heads'] = trial.suggest_int('AttTS_Heads'+str(ctr), 2, 10, step=2)
+                    else:
+                        config['AttTS_Heads'] = trial.suggest_int('AttTS_Heads'+str(ctr), 1, 10)
             elif 'flow' in modality_to_use:
                 if (ctr==0) and config['e_dim_flow'] % 2 ==0:
                     config['AttTS_Heads'] = trial.suggest_int('AttTS_Heads', 2, 10, step=2)
-                else:
+                elif (ctr == 0):
                     config['AttTS_Heads'] = trial.suggest_int('AttTS_Heads', 1, 10)
                 if config['e_dim_flow'] % config['AttTS_Heads'] == 0:
                     temp_flag = 1
+                if temp_flag == 0:
+                    if config['e_dim_flow'] % 2 == 0:
+                        config['AttTS_Heads'] = trial.suggest_int('AttTS_Heads'+str(ctr), 2, 10, step=2)
+                    else:
+                        config['AttTS_Heads'] = trial.suggest_int('AttTS_Heads'+str(ctr), 1, 10)
             elif 'meds' in modality_to_use:
                 if (ctr==0) and config['e_dim_med_ids'] % 2 ==0:
                     config['AttTS_Heads'] = trial.suggest_int('AttTS_Heads', 2, 10, step=2)
-                else:
+                elif (ctr == 0):
                     config['AttTS_Heads'] = trial.suggest_int('AttTS_Heads', 1, 10)
                 if config['e_dim_med_ids'] % config['AttTS_Heads'] == 0:
                     temp_flag = 1
-            if temp_flag ==0:
-                config['AttTS_Heads'] = trial.suggest_int('AttTS_Heads'+str(ctr), 1, 10)
-                ctr = ctr + 1
+                if temp_flag == 0:
+                    if config['e_dim_med_ids'] % 2 == 0:
+                        config['AttTS_Heads'] = trial.suggest_int('AttTS_Heads'+str(ctr), 2, 10, step=2)
+                    else:
+                        config['AttTS_Heads'] = trial.suggest_int('AttTS_Heads'+str(ctr), 1, 10)
+
+            ctr = ctr + 1
 
         model = ts_model_class_Optuna_hp_tune.TS_Transformer_Med_index(**config).to(device)
     else:
