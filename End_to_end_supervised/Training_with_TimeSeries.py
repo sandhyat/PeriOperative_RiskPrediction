@@ -209,10 +209,10 @@ torch.backends.cudnn.benchmark = False
 np.random.seed(args.randomSeed)
 
 
-# data_dir = '/input/'
+data_dir = '/input/'
 
-out_dir = './'
-# out_dir = '/output/'
+# out_dir = './'
+out_dir = '/output/'
 
 # reading the preop and outcome feather files
 # preops = feather.read_feather(data_dir + 'preops_reduced_for_training.feather')
