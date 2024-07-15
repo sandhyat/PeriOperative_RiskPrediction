@@ -39,7 +39,6 @@ class TS_lstm_Med_index(nn.Module):
             self.lstm_hid = kwargs["lstm_hid"]
             self.bilstm_med = kwargs["bilstm_med"]
             self.Att_MedAgg = kwargs["Att_MedAgg"]
-            self.AttMedAgg_Heads = kwargs["AttMedAgg_Heads"]
             self.p_idx_med_ids = kwargs["p_idx_med_ids"]
             self.p_idx_units = kwargs["p_idx_units"]
             self.drp_rate = kwargs["p_rows"]
@@ -89,6 +88,7 @@ class TS_lstm_Med_index(nn.Module):
                                                              self.group_end, self.p_idx_units)
 
             if self.Att_MedAgg == True:
+                self.AttMedAgg_Heads = kwargs["AttMedAgg_Heads"]
                 # attention layer to aggregate the medication at any given time; class_token to get all the information
                 self.class_token = torch.nn.Parameter(torch.randn(1, 1, self.e_dim_med_ids))  # "global information"
                 torch.nn.init.normal_(self.class_token, std=0.02)
@@ -198,7 +198,6 @@ class TS_lstm_Med_index(nn.Module):
 
         if 'pmh' in self.modality_to_use:
             self.Att_pmh_Agg = kwargs['Att_pmh_Agg']
-            self.AttPmhAgg_Heads = kwargs['AttPmhAgg_Heads']
             self.hidden_pmh = kwargs["hidden_units_pmh"]
             self.hidden_final_pmh = kwargs["hidden_units_final_pmh"]
             self.hidden_depth_pmh = kwargs["hidden_depth_pmh"]
@@ -207,6 +206,7 @@ class TS_lstm_Med_index(nn.Module):
             self.pmhWDRateL1 = kwargs["weight_decay_pmhL1"]
 
             if self.Att_pmh_Agg == True:
+                self.AttPmhAgg_Heads = kwargs['AttPmhAgg_Heads']
                 # attention layer to aggregate the icd codes from past medical history for each patient; class_token to get all the information
                 self.class_token = torch.nn.Parameter(torch.randn(1, 1, self.input_size_pmh))  # "global information"
                 torch.nn.init.normal_(self.class_token, std=0.02)
@@ -231,7 +231,6 @@ class TS_lstm_Med_index(nn.Module):
 
         if 'problist' in self.modality_to_use:
             self.Att_problist_Agg = kwargs['Att_problist_Agg']
-            self.AttProblistAgg_Heads = kwargs['AttPmhAgg_Heads'] # using the same number of heads as in the past medical history
             self.hidden_problist = kwargs["hidden_units_problist"]
             self.hidden_final_problist = kwargs["hidden_units_final_problist"]
             self.hidden_depth_problist = kwargs["hidden_depth_problist"]
@@ -240,6 +239,8 @@ class TS_lstm_Med_index(nn.Module):
             self.problistWDRateL1 = kwargs["weight_decay_problistL1"]
 
             if self.Att_problist_Agg == True:
+                self.AttProblistAgg_Heads = kwargs[
+                    'AttPmhAgg_Heads']  # using the same number of heads as in the past medical history
                 # attention layer to aggregate the icd codes from problem list for each patient; class_token to get all the information
                 self.class_token = torch.nn.Parameter(torch.randn(1, 1, self.input_size_problist))  # "global information"
                 torch.nn.init.normal_(self.class_token, std=0.02)
@@ -272,11 +273,12 @@ class TS_lstm_Med_index(nn.Module):
             self.hmWDRateL1 = kwargs["weight_decay_hmL1"]
 
             if self.Att_HM_Agg == True:
+                self.Att_HM_agg_Heads = kwargs['Att_HM_agg_Heads']
                 # attention layer to aggregate the home medication for each patient; class_token to get all the information
                 self.class_token = torch.nn.Parameter(torch.randn(1, 1, self.input_size_hm))  # "global information"
                 torch.nn.init.normal_(self.class_token, std=0.02)
-                if self.input_size_hm % self.AttMedAgg_Heads == 0:
-                    self.attention_hm = nn.MultiheadAttention(self.input_size_hm, self.AttMedAgg_Heads,
+                if self.input_size_hm % self.Att_HM_agg_Heads == 0:
+                    self.attention_hm = nn.MultiheadAttention(self.input_size_hm, self.Att_HM_agg_Heads,
                                                               batch_first=True)
                 else:
                     raise Exception("embedding dim needs to be divisible by number of attention heads")
@@ -333,7 +335,6 @@ class TS_lstm_Med_index(nn.Module):
         reg_wd = 0
         all_rep = []
         seq_len = data_dict['endtimes']
-        my_device = data_dict[self.modality_to_use[0]].device
         """ preops MLP"""
         if 'preops' in self.modality_to_use:
             preops = data_dict['preops']
@@ -444,6 +445,8 @@ class TS_lstm_Med_index(nn.Module):
             med_ids = data_dict['meds'][0]
             dose = data_dict['meds'][1]
             units = data_dict['meds'][2]
+            my_device = med_ids.device
+
             # dropout before embedding layer. Using doses since we multiply the doses with units annd embedding. It circumvents the problem of  passing dropped out  values to the embedding layer
             # this is okay even when the there is dropout is included in the lstm with more than one layer because the dropout is applied to the outpput of lstm layer.
             dose = self.drop_layer1(dose)
@@ -601,7 +604,6 @@ class TS_Transformer_Med_index(nn.Module):
             self.lstm_hid = kwargs["lstm_hid"]
             self.bilstm_med = kwargs["bilstm_med"]
             self.Att_MedAgg = kwargs["Att_MedAgg"]
-            self.AttMedAgg_Heads = kwargs["AttMedAgg_Heads"]
             self.p_idx_med_ids = kwargs["p_idx_med_ids"]
             self.p_idx_units = kwargs["p_idx_units"]
             self.drp_rate = kwargs["p_rows"]
@@ -651,6 +653,7 @@ class TS_Transformer_Med_index(nn.Module):
                                                              self.group_end, self.p_idx_units)
 
             if self.Att_MedAgg == True:
+                self.AttMedAgg_Heads = kwargs["AttMedAgg_Heads"]
                 # attention layer to aggregate the medication at any given time; class_token to get all the information
                 self.class_token = torch.nn.Parameter(torch.randn(1, 1, self.e_dim_med_ids))  # "global information"
                 torch.nn.init.normal_(self.class_token, std=0.02)
@@ -678,7 +681,7 @@ class TS_Transformer_Med_index(nn.Module):
             self.bilstm_flow = kwargs["bilstm_flow"]
             self.input_flow_size = kwargs['num_flowsheet_feat']
             self.lstmFlowWDRateL2 = kwargs["weight_decay_LSTMflowL2"]
-            self.e_dim_flow = kwargs["e_dim_med_ids"]
+            self.e_dim_flow = kwargs["e_dim_flow"]
 
             """ TS flowsheet bit """
 
@@ -733,7 +736,6 @@ class TS_Transformer_Med_index(nn.Module):
 
         if 'pmh' in self.modality_to_use:
             self.Att_pmh_Agg = kwargs['Att_pmh_Agg']
-            self.AttPmhAgg_Heads = kwargs['AttPmhAgg_Heads']
             self.hidden_pmh = kwargs["hidden_units_pmh"]
             self.hidden_final_pmh = kwargs["hidden_units_final_pmh"]
             self.hidden_depth_pmh = kwargs["hidden_depth_pmh"]
@@ -742,6 +744,7 @@ class TS_Transformer_Med_index(nn.Module):
             self.pmhWDRateL1 = kwargs["weight_decay_pmhL1"]
 
             if self.Att_pmh_Agg == True:
+                self.AttPmhAgg_Heads = kwargs['AttPmhAgg_Heads']
                 # attention layer to aggregate the icd codes from past medical history for each patient; class_token to get all the information
                 self.class_token = torch.nn.Parameter(torch.randn(1, 1, self.input_size_pmh))  # "global information"
                 torch.nn.init.normal_(self.class_token, std=0.02)
@@ -766,7 +769,6 @@ class TS_Transformer_Med_index(nn.Module):
 
         if 'problist' in self.modality_to_use:
             self.Att_problist_Agg = kwargs['Att_problist_Agg']
-            self.AttProblistAgg_Heads = kwargs['AttPmhAgg_Heads'] # using the same number of heads as in the past medical history
             self.hidden_problist = kwargs["hidden_units_problist"]
             self.hidden_final_problist = kwargs["hidden_units_final_problist"]
             self.hidden_depth_problist = kwargs["hidden_depth_problist"]
@@ -775,6 +777,8 @@ class TS_Transformer_Med_index(nn.Module):
             self.problistWDRateL1 = kwargs["weight_decay_problistL1"]
 
             if self.Att_problist_Agg == True:
+                self.AttProblistAgg_Heads = kwargs[
+                    'AttPmhAgg_Heads']  # using the same number of heads as in the past medical history
                 # attention layer to aggregate the icd codes from problem list for each patient; class_token to get all the information
                 self.class_token = torch.nn.Parameter(torch.randn(1, 1, self.input_size_problist))  # "global information"
                 torch.nn.init.normal_(self.class_token, std=0.02)
@@ -807,6 +811,7 @@ class TS_Transformer_Med_index(nn.Module):
             self.hmWDRateL1 = kwargs["weight_decay_hmL1"]
 
             if self.Att_HM_Agg == True:
+                self.Att_HM_agg_Heads = kwargs['Att_HM_agg_Heads']
                 # attention layer to aggregate the home medication for each patient; class_token to get all the information
                 self.class_token = torch.nn.Parameter(torch.randn(1, 1, self.input_size_hm))  # "global information"
                 torch.nn.init.normal_(self.class_token, std=0.02)
@@ -925,7 +930,6 @@ class TS_Transformer_Med_index(nn.Module):
 
         reg_wd = 0
         all_rep = []
-        my_device = data_dict[self.modality_to_use[0]].device
         """ preops MLP"""
         if 'preops' in self.modality_to_use:
             preops = data_dict['preops']
@@ -2190,13 +2194,12 @@ def collate_time_series(batch0, device):
                                             batch_first=True).to(device)
 
     ## test and handle if the max achieved time is less than the inference target time
-
     for i in ['meds', 'flow']:
-        if i == 'flow':
+        if (i == 'flow') and ('flow' in modalities):
             augment = max(durations) - output[i].shape[1]
             if augment > 0:
                 output[i] = torch.nn.functional.pad(output[i], pad=[0, 0, 0, augment])  ## pad goes back to front along the shape
-        else:
+        elif (i == 'meds') and ('meds' in modalities):
             for j in range(len(output[i])):
                 augment = max(durations) - output[i][j].shape[1]
                 if augment > 0:
