@@ -809,29 +809,41 @@ def objective(trial, args):
             config['stride_conv'] = trial.suggest_int('stride_conv', 1,3)
         config['ats_dropout'] = trial.suggest_float("ats_dropout", 0.01, 0.3, log=False)
 
-        # breakpoint()
         # for getting a compatible attention head value
         temp_flag = 0
-        config['AttTS_Heads'] = trial.suggest_int('AttTS_Heads', 2, 10)
+
+        ctr = 0 # this is such a round about way to get this condition satisfied but can't find any other way because once a name has been assigned optuna doesn't let it get duplicated
         while temp_flag == 0:
             if 'meds' in modality_to_use and 'flow' in modality_to_use:
-                if config['e_dim_med_ids'] + config['e_dim_flow'] % config['AttTS_Heads'] == 0:
+                if (ctr==0) and (config['e_dim_med_ids'] + config['e_dim_flow']) % 2 ==0:
+                    config['AttTS_Heads'] = trial.suggest_int('AttTS_Heads', 2, 10, step=2)
+                else:
+                    config['AttTS_Heads'] = trial.suggest_int('AttTS_Heads', 1, 10)
+                if (config['e_dim_med_ids'] + config['e_dim_flow']) % config['AttTS_Heads'] == 0:
                     temp_flag = 1
             elif 'flow' in modality_to_use:
+                if (ctr==0) and config['e_dim_flow'] % 2 ==0:
+                    config['AttTS_Heads'] = trial.suggest_int('AttTS_Heads', 2, 10, step=2)
+                else:
+                    config['AttTS_Heads'] = trial.suggest_int('AttTS_Heads', 1, 10)
                 if config['e_dim_flow'] % config['AttTS_Heads'] == 0:
                     temp_flag = 1
             elif 'meds' in modality_to_use:
+                if (ctr==0) and config['e_dim_med_ids'] % 2 ==0:
+                    config['AttTS_Heads'] = trial.suggest_int('AttTS_Heads', 2, 10, step=2)
+                else:
+                    config['AttTS_Heads'] = trial.suggest_int('AttTS_Heads', 1, 10)
                 if config['e_dim_med_ids'] % config['AttTS_Heads'] == 0:
                     temp_flag = 1
-            config['AttTS_Heads'] = trial.suggest_int('AttTS_Heads', 2+config['AttTS_Heads'], 10+config['AttTS_Heads'])
+            if temp_flag ==0:
+                config['AttTS_Heads'] = trial.suggest_int('AttTS_Heads'+str(ctr), 1, 10)
+                ctr = ctr + 1
 
-
-        # breakpoint()
         model = ts_model_class_Optuna_hp_tune.TS_Transformer_Med_index(**config).to(device)
     else:
         model = ts_model_class_Optuna_hp_tune.TS_lstm_Med_index(**config).to(device)
 
-    batchSize = trial.suggest_int("batchSize",110,128)
+    batchSize = trial.suggest_int("batchSize",8,128)
 
     learningRate = trial.suggest_float("learningRate", 1e-5, 1e-1, log=True)
     optimizer = optim.Adam(model.parameters(), lr=learningRate, weight_decay=1e-5)
