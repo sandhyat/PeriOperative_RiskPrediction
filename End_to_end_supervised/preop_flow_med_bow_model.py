@@ -846,8 +846,8 @@ class TS_Transformer_Med_index(nn.Module):
             X = torch.arange(max_len, dtype=torch.float32).reshape(
                 -1, 1) / torch.pow(10000, torch.arange(
                 0, (self.e_dim_med_ids+self.e_dim_flow), 2, dtype=torch.float32) / (self.e_dim_med_ids+self.e_dim_flow))
-            self.P[:, :, 0::2] = torch.sin(X)
-            self.P[:, :, 1::2] = torch.cos(X)
+            self.P[:, :, 0::2] = torch.sin(X)[:, :self.P[:, :, 0::2].shape[-1]] # this is being done when the input size is odd
+            self.P[:, :, 1::2] = torch.cos(X)[:, :self.P[:, :, 1::2].shape[-1]]
             self.class_token_TS = torch.nn.Parameter(torch.randn(1, 1, self.e_dim_med_ids + self.e_dim_flow))  # "global information"
             torch.nn.init.normal_(self.class_token_TS, std=0.08)
             if (self.e_dim_med_ids + self.e_dim_flow) % self.AttTS_Heads == 0:
@@ -862,8 +862,8 @@ class TS_Transformer_Med_index(nn.Module):
             self.P = torch.zeros((1, max_len, self.e_dim_flow))
             X = torch.arange(max_len, dtype=torch.float32).reshape(-1, 1) / torch.pow(10000, torch.arange(
                 0, (self.e_dim_flow), 2, dtype=torch.float32) / (self.e_dim_flow))
-            self.P[:, :, 0::2] = torch.sin(X)
-            self.P[:, :, 1::2] = torch.cos(X)
+            self.P[:, :, 0::2] = torch.sin(X)[:, :self.P[:, :, 0::2].shape[-1]] # this is being done when the input size is odd
+            self.P[:, :, 1::2] = torch.cos(X)[:, :self.P[:, :, 1::2].shape[-1]]
 
             self.class_token_TS = torch.nn.Parameter(torch.randn(1, 1, self.e_dim_flow))  # "global information"
             torch.nn.init.normal_(self.class_token_TS, std=0.08)
@@ -879,8 +879,8 @@ class TS_Transformer_Med_index(nn.Module):
             self.P = torch.zeros((1, max_len, self.e_dim_med_ids))
             X = torch.arange(max_len, dtype=torch.float32).reshape(-1, 1) / torch.pow(10000, torch.arange(
                 0, (self.e_dim_med_ids), 2, dtype=torch.float32) / (self.e_dim_med_ids))
-            self.P[:, :, 0::2] = torch.sin(X)
-            self.P[:, :, 1::2] = torch.cos(X)
+            self.P[:, :, 0::2] = torch.sin(X)[:, :self.P[:, :, 0::2].shape[-1]] # this is being done when the input size is odd
+            self.P[:, :, 1::2] = torch.cos(X)[:, :self.P[:, :, 1::2].shape[-1]]
 
             self.class_token_TS = torch.nn.Parameter(torch.randn(1, 1, self.e_dim_med_ids))  # "global information"
             torch.nn.init.normal_(self.class_token_TS, std=0.08)
@@ -990,7 +990,7 @@ class TS_Transformer_Med_index(nn.Module):
                 bs = pmh.size(0)
                 pmh_att = torch.cat([self.class_token.expand(bs, -1, -1), pmh],
                                           dim=1)
-                encodings, _ = self.attention_hm(pmh_att, pmh_att,
+                encodings, _ = self.attention_pmh(pmh_att, pmh_att,
                                                  pmh_att)
                 pmh_att0 = encodings[:, 0, :]
                 pmh_path = torch.nn.ReLU()(self.hidden_layers_pmh[0](pmh_att0))
@@ -1016,7 +1016,7 @@ class TS_Transformer_Med_index(nn.Module):
                 bs = problist.size(0)
                 problist_att = torch.cat([self.class_token.expand(bs, -1, -1), problist],
                                           dim=1)
-                encodings, _ = self.attention_hm(problist_att, problist_att,
+                encodings, _ = self.attention_problist(problist_att, problist_att,
                                                  problist_att)
                 problist_att0 = encodings[:, 0, :]
                 problist_path = torch.nn.ReLU()(self.hidden_layers_problist[0](problist_att0))
@@ -1100,7 +1100,7 @@ class TS_Transformer_Med_index(nn.Module):
             all_rep.append(final_for_mlp)
 
         elif 'flow' in self.modality_to_use:
-            bs = med_combined_embed.size(0)
+            bs = flowsheets_embedded.size(0)
             final_for_TEncoder = torch.cat((self.class_token_TS.expand(bs, -1, -1), flowsheets_embedded),1)  # the init token does the part of cls
 
             # positional encoding part
@@ -1428,7 +1428,6 @@ class TS_Attention_Med_index(nn.Module):
         else: # summing the values across the medication dimension
             med_combined_embed = torch.sum(med_combined_embed, 2)
 
-        # breakpoint()
         #cnn on meds; need to swap the axis first
         med_combined_embed = torch.transpose(med_combined_embed, 1,2)
         meds_aftercnn = self.conv1d_meds(med_combined_embed)
