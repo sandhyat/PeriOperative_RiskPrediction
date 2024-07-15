@@ -47,8 +47,7 @@ def normalization(data0, mode, normalizing_value, contin_var):
         data[contin_var] = data[contin_var] / max_v
     return data
 
-def preprocess_train(preops,task, y_outcome=None, binary_outcome=False, test_size=0.2, valid_size=0.1,
-                     random_state=101):
+def preprocess_train(preops,task, y_outcome=None, binary_outcome=False, test_size=0.2, valid_size=0.1,random_state=101, input_dr=None, output_dr=None):
     if 'orlogid_encoded' in preops.columns:  # this is being done to have generality when this code is ran on its own and the data will have orlogids in comparison to when this function will be called fomr the model training file
         preops.rename({"orlogid_encoded": "person_integer"}, axis=1, inplace=True)
 
@@ -56,19 +55,9 @@ def preprocess_train(preops,task, y_outcome=None, binary_outcome=False, test_siz
 
     preops_mask = preops.copy()
 
-    # finding the categorical lab variables
-    # with open('/mnt/ris/ActFastExports/v1.1/factor_encoding.json') as f:
-    #     data = json.load(f)
-    #
-    # preop_labs_categorical = list(data.keys())
+    lab_cats = pd.read_csv(input_dr+'mapping_info/categories_labs.csv')
 
-    lab_cats = pd.read_csv('/mnt/ris/ActFastExports/v1.3.2/mapping_info/categories_labs.csv')
-    # lab_cats = pd.read_csv('/input/mapping_info/categories_labs.csv')
-
-    ordinal_variables = list(pd.read_csv('/mnt/ris/ActFastExports/v1.3.2/mapping_info/ordinal_vars.txt', delimiter= "\t", header=None)[0])
-    # ordinal_variables = list(pd.read_csv('/input/mapping_info/ordinal_vars.txt', delimiter= "\t",header=None)[0])
-
-
+    ordinal_variables = list(pd.read_csv(input_dr+'mapping_info/ordinal_vars.txt', delimiter= "\t",header=None)[0])
 
     preop_labs_categorical = lab_cats[lab_cats['all_numeric'] == 0.0]['LAB_TEST'].unique()
     num_lab_cats = [i for i in lab_cats['LAB_TEST'].unique() if
@@ -85,7 +74,7 @@ def preprocess_train(preops,task, y_outcome=None, binary_outcome=False, test_siz
     preops.loc[preops['Sex'] == 1, 'Sex'] = 0
     preops.loc[preops['Sex'] == 2, 'Sex'] = 1
 
-    # breakpoint()
+
     # encoding the plannedDispo from text to number
     # {"OUTPATIENT": 0, '23 HOUR ADMIT': 1, "FLOOR": 1, "OBS. UNIT": 2, "ICU": 3}
     preops.loc[preops['plannedDispo'] == 'Outpatient', 'plannedDispo'] = 0
@@ -99,7 +88,7 @@ def preprocess_train(preops,task, y_outcome=None, binary_outcome=False, test_siz
 
     categorical_variables = [i for i in preop_labs_categorical if i in preops.columns] + ['Sex', 'PlannedAnesthesia']
     binary_variables = []
-    # breakpoint()
+
     # continuous_variables = ['Secondary Diagnosis']
     continuous_variables = []
 
@@ -202,14 +191,14 @@ def preprocess_train(preops,task, y_outcome=None, binary_outcome=False, test_siz
     preops_mask.drop(columns='person_integer', inplace=True)
     for name in preops_mask.columns:
         preops_mask[name] = preops_mask[name].astype('int')
-    # breakpoint()
+
 
     # partitioning the data into train, valid and test
     if False:
         if (binary_outcome == True) and (y_outcome.dtype != 'float64'):
             train0, test = train_test_split(preops_ohe, test_size=test_size, random_state=random_state,
                                             stratify=y_outcome)
-            train, valid = train_test_split(train0, test_size=valid_size / (1. - test_size), random_state=42,
+            train, valid = train_test_split(train0, test_size=valid_size / (1. - test_size), random_state=random_state,
                                             stratify=y_outcome[train0.index])
         else:
             train0, test = train_test_split(preops_ohe, test_size=test_size, random_state=random_state)
@@ -219,7 +208,7 @@ def preprocess_train(preops,task, y_outcome=None, binary_outcome=False, test_siz
         test = preops_ohe.iloc[:upto_test_idx]
         train0 = preops_ohe.iloc[upto_test_idx:]
         if (binary_outcome == True) and (y_outcome.dtype != 'float64'):
-            train, valid = train_test_split(train0, test_size=valid_size / (1. - test_size), random_state=42,
+            train, valid = train_test_split(train0, test_size=valid_size / (1. - test_size), random_state=random_state,
                                             stratify=y_outcome[train0.index])
         else:
             train, valid = train_test_split(train0, test_size=valid_size / (1. - test_size), random_state=random_state)
@@ -296,9 +285,8 @@ def preprocess_train(preops,task, y_outcome=None, binary_outcome=False, test_siz
 
     # meta_Data["bow"] = bow_cols
 
-    output_file_name = './preops_metadata' + str(task) + '.json'
-    # output_file_name = '/output_model_related/preops_metadata_' + str(task) + '.json'
-    # # #
+    output_file_name = output_dr + 'preops_metadata_' + str(task) + "_" + datetime.now().strftime("%y-%m-%d-%H:%M:%S") +'.json'
+
     with open(output_file_name, 'w') as outfile:
         json.dump(meta_Data, outfile)
 

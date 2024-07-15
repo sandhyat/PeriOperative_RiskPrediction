@@ -35,7 +35,7 @@ torch.set_num_interop_threads(8)
 # starting time of the script
 start_time = datetime.now()
 
-parser = argparse.ArgumentParser(description='HP for ML optimization')
+parser = argparse.ArgumentParser(description='TS modular different model training')
 
 ## modalities to select
 parser.add_argument('--preops', action="store_true",
@@ -87,6 +87,7 @@ parser.add_argument("--problistL1",  default=0.1, type=float)
 ## for the homemeds
 parser.add_argument("--home_medsform", default='embedding_sum') # options {'ohe', 'embedding_sum', 'embedding_attention'}
 parser.add_argument("--AttentionHhomeMedsAgg", default=False, action='store_true') # this needs to be true when embedding_attention is active in the above line
+parser.add_argument("--AttentionHomeMedsAggHeads", default=2, type=int)
 parser.add_argument("--hmDepth", default=5, type=int)  #
 parser.add_argument("--hmWidth", default=400, type=int)  #
 parser.add_argument("--hmWidthFinal", default=10, type=int)  #
@@ -131,6 +132,7 @@ parser.add_argument("--BilstmFlow", default=False, action='store_true')
 ## for model type for time series
 parser.add_argument("--modelType", default='lstm') # options {'lstm', 'transformer'}
 ## the following arguments are only relevant for the transformer model type
+parser.add_argument("--e_dim_flow", default=10, type=int) # embedding id for flowsheet before passing them to the transformer
 parser.add_argument("--AttTSDepth", default=4, type=int) # depth of the transformer that will take the time series input
 parser.add_argument("--AttTSHeads", default=2, type=int) # number of heads in the transformer encoder layer
 parser.add_argument("--cnn_before_Att", default=True, action='store_true')
@@ -153,10 +155,8 @@ parser.add_argument("--XavOrthWeightInt", default=True, action='store_true')  # 
 
 ## task and setup parameters
 parser.add_argument("--task",  default="icu") #
-parser.add_argument("--binaryEOC", default=True, action='store_true')  #
 parser.add_argument("--drugNamesNo", default=True,  action='store_true') #
 parser.add_argument("--trainTime", default=True, action='store_true')
-parser.add_argument("--testcondition", default='None') # options in  {None, preopOnly, MedOnly, FlowOnly, MedFlow }
 parser.add_argument("--randomSeed", default=100, type=int )
 parser.add_argument("--includeMissingnessMasks", default=False, action='store_true')
 parser.add_argument("--overSampling", default=True, action='store_true') # keep it as False when task is endofcase
@@ -211,6 +211,9 @@ np.random.seed(args.randomSeed)
 
 # data_dir = '/input/'
 
+out_dir = './'
+# out_dir = '/output/'
+
 # reading the preop and outcome feather files
 # preops = feather.read_feather(data_dir + 'preops_reduced_for_training.feather')
 # preops = preops.drop(['MRN_encoded'], axis =1)
@@ -218,7 +221,6 @@ np.random.seed(args.randomSeed)
 preops = pd.read_csv(data_dir + 'epic_preop.csv')
 outcomes = pd.read_csv(data_dir + 'epic_outcomes.csv')
 end_of_case_times = outcomes[['orlogid_encoded', 'endtime']]
-
 
 
 # end_of_case_times = feather.read_feather(data_dir + 'end_of_case_times.feather')
@@ -356,7 +358,7 @@ if 'preops' not in modality_to_use:
     test = preops.iloc[:upto_test_idx]
     train0 = preops.iloc[upto_test_idx:]
     if (binary_outcome == True) and (y_outcome.dtype != 'float64'):
-        train, valid = train_test_split(train0, test_size=valid_size / (1. - test_size), random_state=42,
+        train, valid = train_test_split(train0, test_size=valid_size / (1. - test_size), random_state=args.randomSeed,
                                         stratify=y_outcome[train0.index])
     else:
         train, valid = train_test_split(train0, test_size=valid_size / (1. - test_size), random_state=args.randomSeed)
@@ -406,10 +408,10 @@ if 'preops' in modality_to_use:
                                                                                                                outcome_df[
                                                                                                                    "outcome"].values,
                                                                                                                binary_outcome=binary_outcome,
-                                                                                                               valid_size=0.05)  # change back to 0.00005
+                                                                                                               valid_size=0.05, random_state=args.randomSeed, input_dr=data_dir, output_dr=out_dir)  # change back to 0.00005
 
-    if args.task == 'icu':  # this part is basically dropping the planned icu cases from the evaluation set (value of plannedDispo are numeric after processing; before processing everything should be compared with actual valuess )
-        test_index = preops.iloc[test_index][preops.iloc[test_index]['plannedDispo'] != 'ICU']['plannedDispo'].index
+    if args.task == 'icu':  # this part is basically dropping the planned icu cases from the evaluation set (value of plannedDispo are numeric after processing; the df has also been changed )
+        test_index = preops.iloc[test_index][preops.iloc[test_index]['plannedDispo'] != 3]['plannedDispo'].index
         preops_te = preops_te.iloc[test_index]
 
     preop_mask_counter = 0
@@ -521,6 +523,7 @@ if 'homemeds' in modality_to_use:
     config['weight_decay_hmL1'] = args.hmL1
     config['input_shape_hm'] = hm_input_dim
     config['Att_HM_Agg'] = args.AttentionHhomeMedsAgg
+    config['Att_HM_agg_Heads'] = args.AttentionHomeMedsAggHeads
 
 if 'pmh' in modality_to_use:
 
@@ -898,7 +901,7 @@ config['modality_used'] = modality_to_use
 device = torch.device('cuda')
 
 if args.modelType == 'transformer':
-    config['AttTS_depth'] = args.AttTSDepth
+    config['e_dim_flow'] = args.e_dim_flow
     config['AttTS_Heads'] = args.AttTSHeads
     config['cnn_before_Att'] = args.cnn_before_Att
     config['kernel_size_conv'] = args.kernel_size_conv
@@ -907,6 +910,11 @@ if args.modelType == 'transformer':
 
     model = preop_flow_med_bow_model.TS_Transformer_Med_index(**config).to(device)
 else:
+    # if True:
+    #     best_trial_file_name = '/home/trips/PeriOperative_RiskPrediction/HP_output/Best_trial_resulticu_lstm_modal__preops_cbow_202.txt'
+    #     with open(best_trial_file_name, 'r') as f: dict = f.readlines()
+    #
+    # breakpoint()
     model = preop_flow_med_bow_model.TS_lstm_Med_index(**config).to(device)
 
 optimizer = optim.Adam(model.parameters(), lr=args.learningRate, weight_decay=1e-5)
@@ -1084,10 +1092,10 @@ pred_y_test = np.concatenate(pred_y_test_best)
 if not binary_outcome:
     print(" Number of epochs that ran ", epoch)
     plt.scatter(np.array(true_y_test),np.array(pred_y_test))
-    plt.title("True outcome value vs predictions on test set " + str(testcondition))
+    plt.title("True outcome value vs predictions on test set ")
     plt.xlabel(" True " + str(args.task))
     plt.ylabel(" Predicted " + str(args.task))
-    plt.savefig("/output/True_vs_Pred_"+str(args.task)+ "_"+ str(testcondition)+".png")
+    plt.savefig("/output/True_vs_Pred_"+str(args.task)+ ".png")
     plt.close()
     corr_value = np.round(np.corrcoef(np.array(true_y_test), np.array(pred_y_test))[1, 0], 3)
     print(str(args.task) + " prediction with correlation ", corr_value)
@@ -1181,9 +1189,9 @@ else:
         'time': timetaken
     }
 
-    breakpoint()
+    # breakpoint()
     csvdata = pd.DataFrame(csvdata)
-    outputcsv = os.path.join('/output/', args.outputcsv)
+    outputcsv = os.path.join(out_dir, args.outputcsv)
     if (os.path.exists(outputcsv)):
         csvdata.to_csv(outputcsv, mode='a', header=False, index=False)
     else:
