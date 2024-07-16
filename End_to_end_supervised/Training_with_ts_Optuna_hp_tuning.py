@@ -361,7 +361,7 @@ def objective(trial, args):
         if args.home_medsform == 'ohe':
             home_meds_final = home_meds_ohe
         if args.home_medsform == 'embedding_sum':
-            # TODO: remove the rxcui number from the home_meds_sum dataframe
+            home_meds_sum = home_meds_sum.drop(["rxcui"], axis=1)
             home_meds_final = home_meds_sum
         hm_embed_flag = 0  # not applicable case
         if args.home_medsform == 'embedding_attention':
