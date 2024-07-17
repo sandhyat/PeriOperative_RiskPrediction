@@ -15,12 +15,12 @@ pip install pytorch-tabnet
 #pip uninstall pandas
 pip install pandas==1.5.3
 
-numbers=($(shuf -i 100-500 -n 1))
+numbers=($(shuf -i 100-500 -n 5))
 
 for number in "${numbers[@]}"
 do
   echo $number
   python /codes/End_to_end_supervised/Tabnet_tabular_HP_tuning.py --task='icu' --randomSeed=$number
-#  python /codes/End_to_end_supervised/Tabnet_tabular_HP_tuning.py --homemeds --task='icu' --randomSeed=$number
-#  python /codes/End_to_end_supervised/Tabnet_tabular_HP_tuning.py --homemeds --pmhProblist --task='icu' --randomSeed=$number
+  python /codes/End_to_end_supervised/Tabnet_tabular_HP_tuning.py --homemeds --task='icu' --randomSeed=$number
+  python /codes/End_to_end_supervised/Tabnet_tabular_HP_tuning.py --homemeds --pmhProblist --task='icu' --randomSeed=$number
 done
