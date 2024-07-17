@@ -34,7 +34,10 @@ Code is available in `End_to_end_supervised/`
 4) `preop_flow_med_bow_model.py`: Contains various deep learning architectures in the model class format that are callable in the `Training_with_TimeSeries.py` file.
 5) `Training_with_ts_Optuna_hp_tuning.py`: Used for hyperparameter tuning using Optuna as an off the shelf method. Similar functionalities are `Training_with_TimeSeries.py` but in the context of hyper parameter tuning. Currently, the best trial is not saved and the inbuilt storage of optuna is not used (for future).
 6) `ts_model_class_Optuna_hp_tune.py`: Mostly, same as `preop_flow_med_bow_model.py` but used during hp tuning. Could be removed in future.
-7) `ts_optuna_hp_tuning_combined.sh`: Bash file that runs the hp tuning file `Training_with_ts_Optuna_hp_tuning.py` for different modality ablations and with differnt randomseeds.
+7) `ts_optuna_hp_tuning_combined.sh`: Bash file that runs the hp tuning file `Training_with_ts_Optuna_hp_tuning.py` for different modality ablations and with different random seeds.
+8) `Tabnet_tabular.py`: [Tabnet](https://arxiv.org/pdf/1908.07442) [implementation](https://github.com/dreamquark-ai/tabnet) on the preoperative stage modalities trained in a supervised manner.
+9) `Tabnet_tabular_HP_tuning.py`: Used for Tabnet HP tuning using Optuna. 
+10) `tabnet_optuna_hp_tuning.sh`: Bash file that runs Tabnet HP tuning file for different preoperative stage modalities with different random seeds.
 
 **For two stage self-supervised setup binary classification**
 Currently, for time series code for [TS2Vec](https://github.com/yuezhihan/ts2vec) is being used, for tabular preops and cbow [SCARF](https://github.com/clabrugere/pytorch-scarf/tree/master) method's code is being used, and for the outcomes there is only a projection head.
@@ -42,6 +45,9 @@ Currently, for time series code for [TS2Vec](https://github.com/yuezhihan/ts2vec
 Code is available in `Two_stage_selfsupervised/`
 
 1) `train_modular.py`: Calls `Multiview_CL_modular.py` for representation learning using all the modalities that are specified in the arguments. Once trained, calls `classification.py` to perform the downstream task or evaluate the learnt representation.
+2) `Scarf_tabular.py`: [SCARF](https://arxiv.org/pdf/2106.15147) [implementation](https://github.com/clabrugere/pytorch-scarf) on the preoperative stage modalities to learn self supervised representation which is fed to an XGBT learner.
+3) `Scarf_tabular_HP_tuning.py`: Used for Scarf HP tuning using Optuna.
+4) `scarf_optuna_hp_tuning.sh`: Bash file that runs Scarf HP tuning file for different preoperative stage modalities with different random seeds. This one exposes the cuda device 1. Will need to be changed later to make it generalizable.
 
 #### 2) Requirements and implementation
 
