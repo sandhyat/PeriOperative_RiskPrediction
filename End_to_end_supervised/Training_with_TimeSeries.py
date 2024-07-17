@@ -208,7 +208,6 @@ torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 np.random.seed(args.randomSeed)
 
-
 data_dir = '/input/'
 
 # out_dir = './'
@@ -486,7 +485,7 @@ if 'homemeds' in modality_to_use:
     if args.home_medsform == 'ohe':
         home_meds_final = home_meds_ohe
     if args.home_medsform == 'embedding_sum':
-        # TODO: remove the rxcui number from the home_meds_sum dataframe
+        home_meds_sum = home_meds_sum.drop(["rxcui"], axis=1)
         home_meds_final = home_meds_sum
     hm_embed_flag = 0  # not applicable case
     if args.home_medsform == 'embedding_attention':
