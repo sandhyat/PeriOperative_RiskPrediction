@@ -35,7 +35,7 @@ Code is available in `End_to_end_supervised/`
 5) `Training_with_ts_Optuna_hp_tuning.py`: Used for hyperparameter tuning using Optuna as an off the shelf method. Similar functionalities are `Training_with_TimeSeries.py` but in the context of hyper parameter tuning. Currently, the best trial is not saved and the inbuilt storage of optuna is not used (for future).
 6) `ts_model_class_Optuna_hp_tune.py`: Mostly, same as `preop_flow_med_bow_model.py` but used during hp tuning. Could be removed in future.
 7) `ts_optuna_hp_tuning_combined.sh`: Bash file that runs the hp tuning file `Training_with_ts_Optuna_hp_tuning.py` for different modality ablations and with different random seeds.
-8) `Tabnet_tabular.py`: [Tabnet](https://arxiv.org/pdf/1908.07442) [implementation](https://github.com/dreamquark-ai/tabnet) on the preoperative stage modalities trained in a supervised manner.
+8) `Tabnet_tabular.py`: [Tabnet](https://arxiv.org/pdf/1908.07442) [implementation](https://github.com/dreamquark-ai/tabnet) on the preoperative stage modalities trained in a supervised manner. It has a `bestModel` argument which when selected will read the HP tuned result files and retrain the models on the train+validation set of dataset. It also saves the models and performance metrics and prediction values on the common test set across all ablations and all 5 repetitions.
 9) `Tabnet_tabular_HP_tuning.py`: Used for Tabnet HP tuning using Optuna. 
 10) `tabnet_optuna_hp_tuning.sh`: Bash file that runs Tabnet HP tuning file for different preoperative stage modalities with different random seeds.
 
