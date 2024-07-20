@@ -10,6 +10,11 @@
 
 #!/usr/bin/env bash
 
+if [ $# -eq 0 ]; then
+    echo "No task provided."
+    exit 1
+fi
+
 pip install optuna
 #pip install pytorch-tabnet
 #pip uninstall pandas
@@ -22,7 +27,8 @@ export CUDA_VISIBLE_DEVICES=1
 for number in "${numbers[@]}"
 do
   echo $number
-  python /codes/Two_stage_selfsupervised/Scarf_tabular_HP_tuning.py --task='icu' --randomSeed=$number
-  python /codes/Two_stage_selfsupervised/Scarf_tabular_HP_tuning.py --homemeds --task='icu' --randomSeed=$number
-  python /codes/Two_stage_selfsupervised/Scarf_tabular_HP_tuning.py --homemeds --pmhProblist --task='icu' --randomSeed=$number
+  echo $1
+  python /codes/Two_stage_selfsupervised/Scarf_tabular_HP_tuning.py --task=$1 --randomSeed=$number
+  python /codes/Two_stage_selfsupervised/Scarf_tabular_HP_tuning.py --homemeds --task=$1 --randomSeed=$number
+  python /codes/Two_stage_selfsupervised/Scarf_tabular_HP_tuning.py --homemeds --pmhProblist --task=$1 --randomSeed=$number
 done

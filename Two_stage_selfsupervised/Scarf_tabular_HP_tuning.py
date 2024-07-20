@@ -449,7 +449,7 @@ def objective(trial, args):
     reg_alpha = trial.suggest_float("reg_alpha", 1e-8, 1.0, log=True)
     max_depth = trial.suggest_int("max_depth", 3, 9, step=2)
     learning_rate = trial.suggest_float("learningRate", 1e-5, 1e-1, log=True)
-    n_estimators = trial.suggest_int("max_depth", 50, 250)
+    n_estimators = trial.suggest_int("n_estimators", 50, 250)
 
     clf = XGBClassifier(n_estimators=n_estimators, max_depth=max_depth, reg_lambda=reg_lambda, reg_alpha=reg_alpha, learning_rate=learning_rate, random_state=args.randomSeed)
     clf.fit(train_embeddings, y_train)
@@ -498,7 +498,7 @@ if __name__ == "__main__":
     for i in range(len(modality_to_use)):
         modalities_to_add = modalities_to_add + "_" + modality_to_use[i]
 
-    std_name = str(args_input.task)+"_"+str(args_input.modelType)+modalities_to_add +str(args_input.randomSeed) +"_"
+    std_name = str(args_input.task)+"_"+str(args_input.modelType)+modalities_to_add +"_"+str(args_input.randomSeed) +"_"
     study = optuna.create_study(direction="maximize", study_name=std_name)
     study.set_metric_names(["Validation_set_auroc"])
 
