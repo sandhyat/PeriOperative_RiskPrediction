@@ -45,7 +45,7 @@ Currently, for time series code for [TS2Vec](https://github.com/yuezhihan/ts2vec
 Code is available in `Two_stage_selfsupervised/`
 
 1) `train_modular.py`: Calls `Multiview_CL_modular.py` for representation learning using all the modalities that are specified in the arguments. Once trained, calls `classification.py` to perform the downstream task or evaluate the learnt representation.
-2) `Scarf_tabular.py`: [SCARF](https://arxiv.org/pdf/2106.15147) [implementation](https://github.com/clabrugere/pytorch-scarf) on the preoperative stage modalities to learn self supervised representation which is fed to an XGBT learner.
+2) `Scarf_tabular.py`: [SCARF](https://arxiv.org/pdf/2106.15147) [implementation](https://github.com/clabrugere/pytorch-scarf) on the preoperative stage modalities to learn self supervised representation which is fed to an XGBT learner. It has a `bestModel` argument which when selected will read the HP tuned result files and retrain the models on the train+validation set of dataset. It also saves the models and performance metrics and prediction values on the common test set across all ablations and all 5 repetitions.
 3) `Scarf_tabular_HP_tuning.py`: Used for Scarf HP tuning using Optuna.
 4) `scarf_optuna_hp_tuning.sh`: Bash file that runs Scarf HP tuning file for different preoperative stage modalities with different random seeds. This one exposes the cuda device 1. Will need to be changed later to make it generalizable.
 
