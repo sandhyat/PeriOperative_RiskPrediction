@@ -14,8 +14,6 @@ from torch.utils.data import Dataset, DataLoader
 from torch.optim import Adam
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import (ConfusionMatrixDisplay, classification_report,
-                             confusion_matrix)
 from sklearn.metrics import roc_auc_score, average_precision_score, confusion_matrix, roc_curve, precision_recall_curve, \
     RocCurveDisplay, PrecisionRecallDisplay, confusion_matrix, r2_score
 from sklearn.model_selection import train_test_split
@@ -642,7 +640,12 @@ if not os.path.exists(perf_filename):
 else:
     with open(perf_filename, 'rb') as file:
         existing_data = pickle.load(file)
-    existing_data[str(args.modelType)][modal_name] = perf_metric
+
+    try:
+        existing_data[str(args.modelType)][modal_name] = perf_metric
+    except(KeyError):  # this is to take care of the situation when a new model is added to the file
+        existing_data[str(args.modelType)] = {}
+        existing_data[str(args.modelType)][modal_name] = perf_metric
 
     # Save the updated dictionary back to the pickle file
     with open(perf_filename, 'wb') as file:
@@ -657,11 +660,13 @@ if not os.path.exists(pred_filename):
 else:
     with open(pred_filename, 'rb') as file:
         existing_data = pickle.load(file)
-    existing_data[str(args.modelType)][modal_name] = outcome_with_pred_test.values
+
+    try:
+        existing_data[str(args.modelType)][modal_name] = outcome_with_pred_test.values
+    except(KeyError):  # this is to take care of the situation when a new model is added to the file
+        existing_data[str(args.modelType)] = {}
+        existing_data[str(args.modelType)][modal_name] = outcome_with_pred_test.values
 
     # Save the updated dictionary back to the pickle file
     with open(pred_filename, 'wb') as file:
         pickle.dump(existing_data, file)
-
-
-with open(perf_filename, 'rb') as file: loaded_data = pickle.load(file)
