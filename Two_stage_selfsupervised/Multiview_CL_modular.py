@@ -289,44 +289,61 @@ class MVCL_f_m_sep:
             loss_log: a list containing the training losses on each epoch.
         '''
 
-        # breakpoint()
+
         modalities_selected = proc_modality_dict_train.keys()
         # since the purpose of this whole set up os better ts representation so it makes sense to set atleast one ts modality as default
-        assert ('flow' in modalities_selected)
-        train_data_f = proc_modality_dict_train['flow']
-        assert (train_data_f.ndim == 3)
-        if n_iters is None and n_epochs is None:
-            n_iters = 200 if train_data_f.size <= 100000 else 600  # default param for n_iters
-        if self.max_train_length is not None:
-            sections = train_data_f.shape[
-                           1] // self.max_train_length  # checking only on flowsheets because during processing they have been brought to same time length of 511
-            if sections >= 2:
-                train_data_f = np.concatenate(split_with_nan(train_data_f, sections, axis=1), axis=0)
-        temporal_missing_f = np.isnan(train_data_f).all(axis=-1).any(axis=0)
-        if temporal_missing_f[0] or temporal_missing_f[-1]:
-            train_data_f = centerize_vary_length_series(train_data_f)
-        train_data_f = train_data_f[~np.isnan(train_data_f).all(axis=2).all(axis=1)]
+        assert ('flow' in modalities_selected) or ('meds' in modalities_selected)
 
-        # creating the loader only for flowsheets as the index can be used for others
-        train_dataset = customdataset(torch.from_numpy(train_data_f).to(
-            torch.float))  # this is being done to obtain indices of the samples in a batch
-        # train_dataset = TensorDataset(torch.from_numpy(train_data).to(torch.float))
-        train_loader = DataLoader(train_dataset, batch_size=min(self.batch_size, len(train_dataset)), shuffle=True,
-                                  drop_last=True)
-        optimizer_f = torch.optim.AdamW(self._net_f.parameters(), lr=self.lr)
+        if 'flow' in modalities_selected:
+            train_data_f = proc_modality_dict_train['flow']
+            assert (train_data_f.ndim == 3)
+            if self.max_train_length is not None:
+                sections = train_data_f.shape[
+                               1] // self.max_train_length  # checking only on flowsheets because during processing they have been brought to same time length of 511
+                if sections >= 2:
+                    train_data_f = np.concatenate(split_with_nan(train_data_f, sections, axis=1), axis=0)
+            temporal_missing_f = np.isnan(train_data_f).all(axis=-1).any(axis=0)
+            if temporal_missing_f[0] or temporal_missing_f[-1]:
+                train_data_f = centerize_vary_length_series(train_data_f)
+            train_data_f = train_data_f[~np.isnan(train_data_f).all(axis=2).all(axis=1)]
+
+            # creating the loader only for flowsheets as the index can be used for others
+            train_dataset = customdataset(torch.from_numpy(train_data_f).to(
+                torch.float))  # this is being done to obtain indices of the samples in a batch
+            # train_dataset = TensorDataset(torch.from_numpy(train_data).to(torch.float))
+            train_loader = DataLoader(train_dataset, batch_size=min(self.batch_size, len(train_dataset)), shuffle=True,
+                                      drop_last=True)
+            optimizer_f = torch.optim.AdamW(self._net_f.parameters(), lr=self.lr)
 
         if 'meds' in modalities_selected:
             train_data_m = proc_modality_dict_train['meds']
             assert (train_data_m.ndim == 3)
-            if sections >= 2:
-                train_data_m = np.concatenate(split_with_nan(train_data_m, sections, axis=1), axis=0)
+            if self.max_train_length is not None:
+                sections = train_data_m.shape[
+                               1] // self.max_train_length
+                if sections >= 2:
+                    train_data_m = np.concatenate(split_with_nan(train_data_m, sections, axis=1), axis=0)
             temporal_missing_m = np.isnan(train_data_m).all(axis=-1).any(axis=0)
             if temporal_missing_m[0] or temporal_missing_m[-1]:
                 train_data_m = centerize_vary_length_series(train_data_m)
             train_data_m = train_data_m[~np.isnan(train_data_m).all(axis=2).all(axis=1)]
-            # converting the medications to a tensor type from numpy type
-            train_data_m = torch.from_numpy(train_data_m).to(torch.float)
+
+            if 'flow' not in modalities_selected: # this is to take care of the case when its only med modalities
+                train_dataset = customdataset(torch.from_numpy(train_data_m).to(torch.float))  # this is being done to obtain indices of the samples in a batch
+                # train_dataset = TensorDataset(torch.from_numpy(train_data).to(torch.float))
+                train_loader = DataLoader(train_dataset, batch_size=min(self.batch_size, len(train_dataset)),
+                                          shuffle=True,
+                                          drop_last=True)
+            else:
+                # converting the medications to a tensor type from numpy type
+                train_data_m = torch.from_numpy(train_data_m).to(torch.float)
             optimizer_m = torch.optim.AdamW(self._net_m_alt.parameters(), lr=self.lr)
+
+        if n_iters is None and n_epochs is None and 'flow' in modalities_selected:
+            n_iters = 200 if train_data_f.size <= 100000 else 600  # default param for n_iters
+        elif n_iters is None and n_epochs is None and 'meds' in modalities_selected:
+            n_iters = 200 if train_data_m.size <= 100000 else 600  # default param for n_iters
+
 
         if 'alerts' in modalities_selected:
             train_data_a = proc_modality_dict_train['alerts']
@@ -395,33 +412,43 @@ class MVCL_f_m_sep:
                 if n_iters is not None and self.n_iters >= n_iters:
                     interrupted = True
                     break
-                x_f = batch[0]
-                # breakpoint()
-                if self.max_train_length is not None and x_f.size(1) > self.max_train_length:
-                    window_offset = np.random.randint(x_f.size(1) - self.max_train_length + 1)
-                    x_f = x_f[:, window_offset: window_offset + self.max_train_length]
-                x_f = x_f.to(self.device)
+                Mcl_loss = 0
+
+                if 'flow' in modalities_selected:
+                    x_f = batch[0]
+                    ts_l = x_f.size(1)
+                elif 'meds' in modalities_selected:
+                    x_m = batch[0]
+                    ts_l = x_m.size(1)
 
                 # this is the augmentation part (mainly cropping over the time dimension, masking is done inside the encoder training part)
-                ts_l = x_f.size(1)
+
                 crop_l = np.random.randint(low=2 ** (self.temporal_unit + 1), high=ts_l + 1)
                 crop_left = np.random.randint(ts_l - crop_l + 1)
                 crop_right = crop_left + crop_l
                 crop_eleft = np.random.randint(crop_left + 1)
                 crop_eright = np.random.randint(low=crop_right, high=ts_l + 1)
-                crop_offset = np.random.randint(low=-crop_eleft, high=ts_l - crop_eright + 1, size=x_f.size(0))
+                crop_offset = np.random.randint(low=-crop_eleft, high=ts_l - crop_eright + 1, size=batch[0].size(0))
 
-                optimizer_f.zero_grad()
+                if 'flow' in modalities_selected:
+                    x_f = batch[0]
+                    # breakpoint()
+                    if self.max_train_length is not None and x_f.size(1) > self.max_train_length:
+                        window_offset = np.random.randint(x_f.size(1) - self.max_train_length + 1)
+                        x_f = x_f[:, window_offset: window_offset + self.max_train_length]
+                    x_f = x_f.to(self.device)
 
-                out1_f = self._net_f(take_per_row(x_f, crop_offset + crop_eleft, crop_right - crop_eleft))
-                out1_f = out1_f[:, -crop_l:]  # this is to make sure we have  only selected the overlapping part
+                    optimizer_f.zero_grad()
 
-                out2_f = self._net_f(take_per_row(x_f, crop_offset + crop_left, crop_eright - crop_left))
-                out2_f = out2_f[:, :crop_l]
+                    out1_f = self._net_f(take_per_row(x_f, crop_offset + crop_eleft, crop_right - crop_eleft))
+                    out1_f = out1_f[:, -crop_l:]  # this is to make sure we have  only selected the overlapping part
 
-                loss_ts_f = hierarchical_contrastive_loss(out1_f,out2_f,temporal_unit=self.temporal_unit)
+                    out2_f = self._net_f(take_per_row(x_f, crop_offset + crop_left, crop_eright - crop_left))
+                    out2_f = out2_f[:, :crop_l]
 
-                Mcl_loss = loss_ts_f
+                    loss_ts_f = hierarchical_contrastive_loss(out1_f,out2_f,temporal_unit=self.temporal_unit)
+
+                    Mcl_loss = Mcl_loss + loss_ts_f
 
                 if 'alerts' in modalities_selected:
                     x_a = train_data_a[batch[1]]
@@ -440,15 +467,17 @@ class MVCL_f_m_sep:
 
                     loss_ts_a = hierarchical_contrastive_loss(out1_a,out2_a,temporal_unit=self.temporal_unit)
                     Mcl_loss = Mcl_loss +  loss_ts_a
-                    cross_modalities_loss = cross_modalities_loss +\
-                                            hierarchical_contrastive_loss(out1_a,out2_f,temporal_unit=self.temporal_unit) \
-                                            + hierarchical_contrastive_loss(out1_f,out2_a,temporal_unit=self.temporal_unit)
+                    if 'flow' in modalities_selected:
+                        cross_modalities_loss = cross_modalities_loss +\
+                                                hierarchical_contrastive_loss(out1_a,out2_f,temporal_unit=self.temporal_unit) \
+                                                + hierarchical_contrastive_loss(out1_f,out2_a,temporal_unit=self.temporal_unit)
 
                     out_ts_a = self._eval_with_pooling(x_a, 'a', encoding_window='full_series')
                     out_ts_a = out_ts_a.squeeze(1).to(device=self.device)
 
                 if 'meds' in modalities_selected:
-                    x_m = train_data_m[batch[1]]
+                    if 'flow' in modalities_selected:
+                        x_m = train_data_m[batch[1]]
                     if self.max_train_length is not None and x_m.size(1) > self.max_train_length:
                         window_offset = np.random.randint(x_m.size(1) - self.max_train_length + 1)
                         x_m = x_m[:, window_offset: window_offset + self.max_train_length]
@@ -467,9 +496,10 @@ class MVCL_f_m_sep:
                     loss_ts_m = hierarchical_contrastive_loss(out1_m,out2_m,temporal_unit=self.temporal_unit)
                     Mcl_loss = Mcl_loss +  loss_ts_m
 
-                    cross_modalities_loss = cross_modalities_loss + \
-                                            hierarchical_contrastive_loss(out1_f, out2_m, temporal_unit=self.temporal_unit) \
-                                            + hierarchical_contrastive_loss(out1_m,out2_f,temporal_unit=self.temporal_unit)
+                    if 'flow' in modalities_selected:
+                        cross_modalities_loss = cross_modalities_loss + \
+                                                hierarchical_contrastive_loss(out1_f, out2_m, temporal_unit=self.temporal_unit) \
+                                                + hierarchical_contrastive_loss(out1_m,out2_f,temporal_unit=self.temporal_unit)
 
                     out_ts_m = self._eval_with_pooling(x_m, 'm', encoding_window='full_series')
                     out_ts_m = out_ts_m.squeeze(1).to(device=self.device)
@@ -610,16 +640,17 @@ class MVCL_f_m_sep:
                 """ Multiview loss preparation, separate head for each modality """
 
                 # compute the multi-view loss between the different views
-                # this step will change the dimension from N * T * F --> N * ts_emb_dim by including max pooling too
-                out_ts_f = self._eval_with_pooling(x_f, 'f', encoding_window='full_series')
-                out_ts_f = out_ts_f.squeeze(1).to(device=self.device)
 
-                # breakpoint()
-                if self.w_ts_pr > 0:
+                if 'flow' in modalities_selected:
+                    # this step will change the dimension from N * T * F --> N * ts_emb_dim by including max pooling too
+                    out_ts_f = self._eval_with_pooling(x_f, 'f', encoding_window='full_series')
+                    out_ts_f = out_ts_f.squeeze(1).to(device=self.device)
+
+                if (self.w_ts_pr > 0) and (len(modalities_selected) >= 2):
                     ## alternate of selecting two sets of modalities, adding their representations and then taking the contrast between the two sets
                     # create a list of projected in order of flowsheets, med, alerts, preops, preop_lab, bow, hm, pmh, problist, outcomes
                     proj_list = []
-                    proj_list.append(self.ts_f_projection_head(out_ts_f))
+                    if 'flow' in modalities_selected: proj_list.append(self.ts_f_projection_head(out_ts_f))
                     if 'meds' in modalities_selected: proj_list.append(self.ts_m_projection_head(out_ts_m))
                     if 'alerts' in modalities_selected: proj_list.append(self.ts_a_projection_head(out_ts_a))
                     if 'preops_o' in modalities_selected:
@@ -644,13 +675,19 @@ class MVCL_f_m_sep:
 
                     across_Rand_SUM_mod_loss = Rand_SUM_modCL_loss(proj_set1, proj_set2)
 
+                if len(modalities_selected) < 2:
+                    across_Rand_SUM_mod_loss = 0 # this is not utilizing the multiview component of the method
+
                 # two kinds of regularizers : 1) to add variation and, 2) to avoid information collapse by decorrelating the embedding dimension
 
-                f_em = self.ts_f_projection_head(out_ts_f) - self.ts_f_projection_head(out_ts_f).mean(dim=0)
-                std_f = torch.sqrt(f_em.var(dim=0) + 0.0001)
-                cov_f = (f_em.T @ f_em) / (self.batch_size - 1)
-                std_loss = torch.mean(F.relu(1 - std_f)) / 2
-                cov_loss = off_diagonal(cov_f).pow_(2).sum().div(f_em.shape[-1])
+                std_loss = 0
+                cov_loss = 0
+                if 'flow' in modalities_selected:
+                    f_em = self.ts_f_projection_head(out_ts_f) - self.ts_f_projection_head(out_ts_f).mean(dim=0)
+                    std_f = torch.sqrt(f_em.var(dim=0) + 0.0001)
+                    cov_f = (f_em.T @ f_em) / (self.batch_size - 1)
+                    std_loss = torch.mean(F.relu(1 - std_f)) / 2
+                    cov_loss = off_diagonal(cov_f).pow_(2).sum().div(f_em.shape[-1])
 
                 if 'meds' in modalities_selected:
                     m_em = self.ts_m_projection_head(out_ts_m) - self.ts_m_projection_head(out_ts_m).mean(dim=0)
@@ -752,13 +789,15 @@ class MVCL_f_m_sep:
                 # print(loss_ts_f, loss_ts_m, loss_pr, loss_pr_l, loss_bw, loss_hm, outcome_totalloss, across_Rand_SUM_mod_loss, cross_modalities_loss)
 
                 Mcl_loss.backward(retain_graph=True)
-                optimizer_f.step()
+
                 optimizer_pr.step()
                 optimizer_pr_l.step()
                 optimizer_cbow.step()
                 optimizer_hm.step()
                 # optimizer_outcomes.step() # dont want to learn outcome rep
-                self.net_f.update_parameters(self._net_f)
+                if 'flow' in modalities_selected:
+                    optimizer_f.step()
+                    self.net_f.update_parameters(self._net_f)
                 if 'alerts' in modalities_selected:
                     optimizer_a.step()
                     self.net_a.update_parameters(self._net_a)
@@ -812,6 +851,7 @@ class MVCL_f_m_sep:
         torch.save(self.pmh_projection_head.state_dict(), f'{self.fd}/{self.seed}_proj_head_pmh.pkl')
         torch.save(self.prob_list_projection_head.state_dict(), f'{self.fd}/{self.seed}_proj_head_problist.pkl')
 
+        # breakpoint()
         return loss_log
 
     def _eval_with_pooling(self, x, flag='f', mask=None, slicing=None, encoding_window=None):  # flag basically indicates which network to use out of flowsheets or meds

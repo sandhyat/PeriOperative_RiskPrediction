@@ -12,10 +12,16 @@ from sklearn.preprocessing import StandardScaler, MinMaxScaler
 import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
+from sklearn.model_selection import train_test_split
 import torch.optim as optim
 import os
 os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
 from torch.profiler import profile, record_function, ProfilerActivity
+from pyarrow import feather  # directly writing import pyarrow didn't work
+
+import sys
+sys.path.append("..")
+from End_to_end_supervised import preprocess_train
 
 class Med_embedding(nn.Module):
     def __init__(self, **kwargs):
@@ -131,75 +137,207 @@ def get_non_gc_objects_with_size():
             objects.append((obj, get_object_size(obj)))
     return objects
     
-def load_epic(dataset, outcome, modality_to_uselist, data_dir):  #dataset is whether it is flowsheets or meds, outcome is the postoperative outcome, list has the name of all modalities that will be used
+def load_epic(outcome, modality_to_uselist, randomSeed, data_dir, out_dir):  #dataset is whether it is flowsheets or meds, outcome is the postoperative outcome, list has the name of all modalities that will be used
 
-    # to use for the modalities which were not taken in the partitioned form and getting the y values
-    train_idx = pd.read_csv(data_dir + "train_test_id_orlogid_map.csv")
-    all_outcomes = pd.read_csv(data_dir + "all_outcomes_with_orlogid.csv")
-    train_id_withoutcomes = train_idx.merge(all_outcomes.drop(columns=['orlogid_encoded']), on=['new_person'], how='left')
+    preops = pd.read_csv(data_dir + 'epic_preop.csv')
+    outcomes = pd.read_csv(data_dir + 'epic_outcomes.csv')
+    end_of_case_times = outcomes[['orlogid_encoded', 'endtime']]
 
-    # processing the labels
-    if outcome=='mortality':
-        train_y = train_id_withoutcomes[train_id_withoutcomes['train_id_or_not']==1]['death_in_30']
-        test_y = train_id_withoutcomes[train_id_withoutcomes['train_id_or_not']==0]['death_in_30']
-    elif outcome=='PE':
-        train_y = train_id_withoutcomes[train_id_withoutcomes['train_id_or_not']==1]['PE']
-        test_y = train_id_withoutcomes[train_id_withoutcomes['train_id_or_not']==0]['PE']
-    elif outcome=='pulm':
-        train_y = train_id_withoutcomes[train_id_withoutcomes['train_id_or_not']==1]['pulm']
-        test_y = train_id_withoutcomes[train_id_withoutcomes['train_id_or_not']==0]['pulm']
-    elif outcome=='severe_present_1':
-        train_y = train_id_withoutcomes[train_id_withoutcomes['train_id_or_not']==1]['severe_present_1']
-        test_y = train_id_withoutcomes[train_id_withoutcomes['train_id_or_not']==0]['severe_present_1']
-    elif outcome=='cardiac':
-        train_y = train_id_withoutcomes[train_id_withoutcomes['train_id_or_not']==1]['cardiac']
-        test_y = train_id_withoutcomes[train_id_withoutcomes['train_id_or_not']==0]['cardiac']
-    elif outcome=='postop_del':
-        train_y = train_id_withoutcomes[train_id_withoutcomes['train_id_or_not']==1]['postop_del']
-        test_y = train_id_withoutcomes[train_id_withoutcomes['train_id_or_not']==0]['postop_del']
-    elif outcome=='DVT':
-        train_y = train_id_withoutcomes[train_id_withoutcomes['train_id_or_not']==1]['DVT']
-        test_y = train_id_withoutcomes[train_id_withoutcomes['train_id_or_not']==0]['DVT']
-    elif outcome in ['low_sbp_time', 'n_glu_high' ]:
-        train_id_withoutcomes[outcome] = train_id_withoutcomes[outcome].fillna(0)
-        train_id_withoutcomes[outcome] = np.where(train_id_withoutcomes[outcome]>0, 1, 0)
-        train_y = train_id_withoutcomes[train_id_withoutcomes['train_id_or_not']==1][outcome]
-        test_y = train_id_withoutcomes[train_id_withoutcomes['train_id_or_not']==0][outcome]
-    elif outcome=='aki1':
-        train_id_withoutcomes.loc[train_id_withoutcomes['post_aki_status'] >= 1, 'post_aki_status'] = 1
-        train_id_withoutcomes.loc[train_id_withoutcomes['post_aki_status'] < 1, 'post_aki_status'] = 0
-        train_y = train_id_withoutcomes[train_id_withoutcomes['train_id_or_not']==1]['post_aki_status']
-        test_y = train_id_withoutcomes[train_id_withoutcomes['train_id_or_not']==0]['post_aki_status']
-    elif outcome=='aki2':
-        train_id_withoutcomes.loc[train_id_withoutcomes[
-                            'post_aki_status'] < 2, 'post_aki_status'] = 0  # the order matters here otherwise everything will bbecome zero :(; there is aone liner too that can be used
-        train_id_withoutcomes.loc[train_id_withoutcomes['post_aki_status'] >= 2, 'post_aki_status'] = 1
-        train_y = train_id_withoutcomes[train_id_withoutcomes['train_id_or_not']==1]['post_aki_status']
-        test_y = train_id_withoutcomes[train_id_withoutcomes['train_id_or_not']==0]['post_aki_status']
-    elif outcome=='aki3':
-        train_id_withoutcomes.loc[train_id_withoutcomes[
-                            'post_aki_status'] < 3, 'post_aki_status'] = 0  # the order matters here otherwise everything will bbecome zero :(; there is aone liner too that can be used
-        train_id_withoutcomes.loc[train_id_withoutcomes['post_aki_status'] == 3, 'post_aki_status'] = 1
-        train_y = train_id_withoutcomes[train_id_withoutcomes['train_id_or_not']==1]['post_aki_status']
-        test_y = train_id_withoutcomes[train_id_withoutcomes['train_id_or_not']==0]['post_aki_status']
-    elif outcome=='worst_pain_1':
-        train_id_withoutcomes.loc[train_id_withoutcomes['worst_pain_1'] < 7, 'worst_pain_1'] = 0  # the order matters here otherwise everything will bbecome zero :(; there is aone liner too that can be used
-        train_id_withoutcomes.loc[train_id_withoutcomes['worst_pain_1'] >= 7, 'worst_pain_1'] = 1
-        train_y = train_id_withoutcomes[train_id_withoutcomes['train_id_or_not']==1]['worst_pain_1']
-        test_y = train_id_withoutcomes[train_id_withoutcomes['train_id_or_not']==0]['worst_pain_1']
-    elif outcome == 'icu':
-        preops_raw = pd.read_csv(data_dir + "Raw_preops_used_in_ICU.csv")
-        test_index_orig = train_idx[train_idx['train_id_or_not'] == 0]['new_person'].values
+    # end_of_case_times = feather.read_feather(data_dir + 'end_of_case_times.feather')
+    regression_outcome_list = ['postop_los', 'survival_time', 'readmission_survival', 'total_blood',
+                               'postop_Vent_duration', 'n_glu_high',
+                               'low_sbp_time', 'aoc_low_sbp', 'low_relmap_time', 'low_relmap_aoc', 'low_map_time',
+                               'low_map_aoc', 'timew_pain_avg_0', 'median_pain_0', 'worst_pain_0', 'worst_pain_1']
+    binary_outcome = outcome not in regression_outcome_list
 
-        # this approach is being used to be consistent with all other outcomes # crosschecked already
-        train_y = train_id_withoutcomes[train_id_withoutcomes['train_id_or_not']==1]['ICU']
-        true_pi_test_int = preops_raw.iloc[test_index_orig][preops_raw.iloc[test_index_orig]['plannedDispo'] != 3]['person_integer'].values
-        test_y = train_id_withoutcomes[train_id_withoutcomes['train_id_or_not']==0]['ICU'].iloc[true_pi_test_int]
+    outcomes = outcomes.dropna(subset=['ICU'])
+    outcomes = outcomes.sort_values(by='survival_time').drop_duplicates(subset=['orlogid_encoded'], keep='last')
 
-        test_index = preops_raw.iloc[test_index_orig][preops_raw.iloc[test_index_orig]['plannedDispo'] != 3]['plannedDispo'].index
+    # exclude very short cases (this also excludes some invalid negative times)
+    end_of_case_times = end_of_case_times.loc[end_of_case_times['endtime'] > 30]
+
+    end_of_case_times['endtime'] = np.minimum(end_of_case_times['endtime'], 511)
 
 
-        del preops_raw, true_pi_test_int
+    binary_outcome_list = ['UTI', 'CVA', 'PNA', 'PE', 'DVT', 'AF', 'arrest', 'VTE', 'GI', 'SSI', 'pulm', 'cardiac',
+                           'postop_trop_crit', 'postop_trop_high', 'post_dialysis', 'n_glucose_low']
+
+    if outcome in regression_outcome_list:
+        outcomes['survival_time'] = np.minimum(outcomes['survival_time'], 90)
+        outcomes['readmission_survival'] = np.minimum(outcomes['readmission_survival'], 30)
+        # outcomes['n_glucose_high'] = outcomes['n_glucose_high'].fillna(0)  # this might not be needed as already taken of by the where statement
+        outcomes['n_glu_high'] = np.where(outcomes['N_glu_measured'] > 0,
+                                          outcomes['n_glu_high'] / outcomes['N_glu_measured'], 0)
+        outcomes['total_blood'] = outcomes['total_blood'].fillna(0)
+        outcomes['low_sbp_time'] = np.where(outcomes['total_t'] > 0, outcomes['low_sbp_time'] / outcomes['total_t'], 0)
+        outcomes['low_relmap_time'] = np.where(outcomes['total_t'] > 0,
+                                               outcomes['low_relmap_time'] / outcomes['total_t'], 0)
+        outcomes['low_map_time'] = np.where(outcomes['total_t'] > 0, outcomes['low_map_time'] / outcomes['total_t'], 0)
+        outcomes['aoc_low_sbp'] = np.where(outcomes['total_t'] > 0, outcomes['aoc_low_sbp'], 0)
+        outcomes['low_relmap_aoc'] = np.where(outcomes['total_t'] > 0, outcomes['low_relmap_aoc'], 0)
+        outcomes['low_map_aoc'] = np.where(outcomes['total_t'] > 0, outcomes['low_map_aoc'], 0)
+        outcomes['postop_vent_duration'] = outcomes['postop_vent_duration'].fillna(0)
+        outcomes['timew_pain_avg_0'] = outcomes['timew_pain_avg_0'] / (
+                    outcomes['timew_pain_avg_0'].max() - outcomes['timew_pain_avg_0'].min())
+        outcomes['median_pain_0'] = outcomes['median_pain_0'] / (
+                    outcomes['median_pain_0'].max() - outcomes['median_pain_0'].min())
+        outcomes['worst_pain_0'] = outcomes['worst_pain_0'] / (
+                    outcomes['worst_pain_0'].max() - outcomes['worst_pain_0'].min())
+        outcomes['worst_pain_1'] = outcomes['worst_pain_1'] / (
+                    outcomes['worst_pain_1'].max() - outcomes['worst_pain_1'].min())
+
+        outcome_df = outcomes[['orlogid_encoded', outcome]]
+    elif outcome in binary_outcome_list:
+        if outcome == 'VTE':
+            temp_outcome = outcomes[['orlogid_encoded']]
+            temp_outcome[outcome] = np.where(outcomes['DVT'] == True, 1, 0) + np.where(outcomes['PE'] == True, 1, 0)
+            temp_outcome.loc[temp_outcome[outcome] == 2, outcome] = 1
+        elif outcome == 'n_glucose_low':
+            temp_outcome = outcomes[['orlogid_encoded', outcome]]
+            temp_outcome[outcome] = temp_outcome[outcome].fillna(0)
+            temp_outcome[outcome] = np.where(temp_outcome[outcome] > 0, 1, 0)
+        else:
+            temp_outcome = outcomes[['orlogid_encoded', outcome]]
+            temp_outcome.loc[temp_outcome[outcome] == True, outcome] = 1
+            temp_outcome.loc[temp_outcome[outcome] == False, outcome] = 0
+        temp_outcome[outcome] = temp_outcome[outcome].astype(int)
+        outcome_df = temp_outcome
+    elif (outcome == 'dvt_pe'):
+        dvt_pe_outcome = outcomes[['orlogid_encoded', 'DVT_PE']]
+        outcome_df = dvt_pe_outcome
+    elif (outcome == 'icu'):
+        icu_outcome = outcomes[['orlogid_encoded', 'ICU']]
+        icu_outcome.loc[icu_outcome['ICU'] == True, 'ICU'] = 1
+        icu_outcome.loc[icu_outcome['ICU'] == False, 'ICU'] = 0
+        icu_outcome['ICU'] = icu_outcome['ICU'].astype(int)
+        outcome_df = icu_outcome
+    elif (outcome == 'mortality'):
+        mortality_outcome = outcomes[['orlogid_encoded', 'death_in_30']]
+        mortality_outcome.loc[mortality_outcome['death_in_30'] == True, 'death_in_30'] = 1
+        mortality_outcome.loc[mortality_outcome['death_in_30'] == False, 'death_in_30'] = 0
+        mortality_outcome['death_in_30'] = mortality_outcome['death_in_30'].astype(int)
+        outcome_df = mortality_outcome
+    elif (outcome == 'aki1' or outcome == 'aki2' or outcome == 'aki3'):
+        aki_outcome = outcomes[['orlogid_encoded', 'post_aki_status']]
+        aki_outcome = aki_outcome.dropna(subset=[
+            'post_aki_status'])  # this is droping the patients with baseline kidney failure as they are now post_aki_status = NA_integer_
+        if outcome == 'aki1':
+            aki_outcome.loc[aki_outcome['post_aki_status'] >= 1, 'post_aki_status'] = 1
+            aki_outcome.loc[aki_outcome['post_aki_status'] < 1, 'post_aki_status'] = 0
+        if outcome == 'aki2':
+            aki_outcome.loc[aki_outcome[
+                                'post_aki_status'] < 2, 'post_aki_status'] = 0  # the order matters here otherwise everything will bbecome zero :(; there is aone liner too that can be used
+            aki_outcome.loc[aki_outcome['post_aki_status'] >= 2, 'post_aki_status'] = 1
+        if outcome == 'aki3':
+            aki_outcome.loc[aki_outcome[
+                                'post_aki_status'] < 3, 'post_aki_status'] = 0  # the order matters here otherwise everything will become zero :(; there is a one liner too that can be used
+            aki_outcome.loc[aki_outcome['post_aki_status'] == 3, 'post_aki_status'] = 1
+        aki_outcome['post_aki_status'] = aki_outcome['post_aki_status'].astype(int)
+        outcome_df = aki_outcome
+    elif (outcome == 'endofcase'):
+        outcome_df = end_of_case_times[['orlogid_encoded', 'true_test']]
+    else:
+        raise Exception("outcome not handled")
+
+    ## intersect 3 mandatory data sources: preop, outcome, case end times
+    combined_case_set = list(set(outcome_df["orlogid_encoded"].values).intersection(
+        set(end_of_case_times['orlogid_encoded'].values)).intersection(
+        set(preops['orlogid_encoded'].values)))
+    if True:
+        combined_case_set = combined_case_set[:10000]
+        # combined_case_set = np.random.choice(combined_case_set, 10000, replace=False)
+
+    outcome_df = outcome_df.loc[outcome_df['orlogid_encoded'].isin(combined_case_set)]
+    preops = preops.loc[preops['orlogid_encoded'].isin(combined_case_set)]
+    end_of_case_times = end_of_case_times.loc[end_of_case_times['orlogid_encoded'].isin(combined_case_set)]
+
+    outcome_df = outcome_df.set_axis(["orlogid_encoded", "outcome"], axis=1)
+
+    # checking for NA and other filters
+    outcome_df = outcome_df.loc[outcome_df['orlogid_encoded'].isin(preops["orlogid_encoded"].unique())]
+    outcome_df = outcome_df.dropna(axis=0).sort_values(["orlogid_encoded"]).reset_index(drop=True)
+    new_index = outcome_df["orlogid_encoded"].copy().reset_index().rename({"index": "new_person"},
+                                                                          axis=1)  # this df basically reindexes everything so from now onwards orlogid_encoded is an integer
+
+    preops = preops.merge(new_index, on="orlogid_encoded", how="inner").drop(["orlogid_encoded"], axis=1).rename(
+        {"new_person": "person_integer"}, axis=1).sort_values(["person_integer"]).reset_index(drop=True)
+
+
+    if 'preops_o' not in modality_to_uselist:
+        test_size = 0.2
+        valid_size = 0.05  # change back to 0.00005 for the full dataset
+        y_outcome = outcome_df["outcome"].values
+        preops.reset_index(drop=True, inplace=True)
+        upto_test_idx = int(test_size * len(preops))
+        test = preops.iloc[:upto_test_idx]
+        train0 = preops.iloc[upto_test_idx:]
+        if (binary_outcome == True) and (y_outcome.dtype != 'float64'):
+            train, valid = train_test_split(train0, test_size=valid_size / (1. - test_size),
+                                            random_state=randomSeed,
+                                            stratify=y_outcome[train0.index])
+        else:
+            train, valid = train_test_split(train0, test_size=valid_size / (1. - test_size),
+                                            random_state=randomSeed)
+
+        train_index = train.index
+        valid_index = valid.index
+        test_index = test.index
+
+        if outcome == 'icu':  # this part is basically dropping the planned icu cases from the evaluation set
+            test_index = preops.iloc[test_index][preops.iloc[test_index]['plannedDispo'] != 'ICU']['plannedDispo'].index
+
+
+    if ('preops_o' in modality_to_uselist) or ('preops_l' in modality_to_uselist) or ('cbow' in modality_to_uselist):
+        # this is being used because we will be adding the problem list and pmh as a seperate module in this file too
+        # to drop the old pmh and problem list
+        to_drop_old_pmh_problist_with_others = ["MentalHistory_anxiety", "MentalHistory_bipolar",
+                                                "MentalHistory_depression",
+                                                "MentalHistory_schizophrenia", "PNA", "delirium_history",
+                                                "MentalHistory_adhd",
+                                                "MentalHistory_other", "opioids_count",
+                                                "total_morphine_equivalent_dose",
+                                                'pre_aki_status', 'preop_ICU', 'preop_los', 'URINE UROBILINOGEN',
+                                                'MRN_encoded', 'time_of_day',
+                                                'BACTERIA, URINE', 'CLARITY, URINE', 'COLOR, URINE',
+                                                'EPITHELIAL CELLS, SQUAMOUS, URINE',
+                                                'GLUCOSE, URINE, QUALITATIVE', 'HYALINE CAST',
+                                                'LEUKOCYTE ESTERASE, URINE',
+                                                'PROTEIN, URINE QUALITATIVE',
+                                                'RED BLOOD CELLS, URINE', 'URINE BLOOD', 'URINE KETONES',
+                                                'URINE NITRITE',
+                                                'URINE UROBILINOGEN', 'WHITE BLOOD CELLS, URINE']
+
+        preops = preops.drop(columns=to_drop_old_pmh_problist_with_others)
+        bow_input = pd.read_csv(data_dir + 'cbow_proc_text.csv')
+
+        bow_input = bow_input.merge(new_index, on="orlogid_encoded", how="inner").set_index('new_person').reindex(
+            list(range(preops.index.min(), preops.index.max() + 1)), fill_value=0).reset_index().drop(
+            ["orlogid_encoded"], axis=1).rename(
+            {"new_person": "person_integer"}, axis=1).sort_values(["person_integer"]).reset_index(drop=True).drop(
+            ["person_integer"], axis=1)
+        bow_cols = [col for col in bow_input.columns if 'BOW' in col]
+        bow_input['BOW_NA'] = np.where(np.isnan(bow_input[bow_cols[0]]), 1, 0)
+        bow_input.fillna(0, inplace=True)
+
+
+        # currently sacrificing 5 data points in the valid set and using the test set to finally compute the auroc etc
+        preops_tr, preops_val, preops_te, train_index, valid_index, test_index, preops_mask = preprocess_train(
+            preops,
+            outcome,
+            y_outcome=
+            outcome_df[
+                "outcome"].values,
+            binary_outcome=binary_outcome,
+            valid_size=0.05, random_state=randomSeed, input_dr=data_dir,
+            output_dr=out_dir)  # change back to 0.00005
+
+        if outcome == 'icu':  # this part is basically dropping the planned icu cases from the evaluation set (value of plannedDispo are numeric after processing; the df has also been changed )
+            test_index = preops.iloc[test_index][preops.iloc[test_index]['plannedDispo'] != 3]['plannedDispo'].index
+            preops_te = preops_te.iloc[test_index]
+
+
+    train_y = outcome_df.iloc[train_index]["outcome"]
+    test_y = outcome_df.iloc[test_index]["outcome"]
 
     if train_y.dtype == 'O' or train_y.dtype == 'bool':
         train_y = train_y.replace([True, False], [1, 0])
@@ -209,44 +347,270 @@ def load_epic(dataset, outcome, modality_to_uselist, data_dir):  #dataset is whe
     nan_idx_train = np.argwhere(np.isnan(train_y.values))
     nan_idx_test = np.argwhere(np.isnan(test_y.values))
 
-    train_idx_df = train_idx[train_idx['train_id_or_not']==1]
-    if outcome == 'icu':  # evaluation only on the non preplanned ICU cases
-       test_idx_df = train_idx[train_idx['new_person'].isin(list(test_index))]
-    else:
-       test_idx_df = train_idx[train_idx['train_id_or_not']==0]
-
     if nan_idx_train.size != 0:
         train_y = np.delete(train_y.values, nan_idx_train, axis=0)
-        train_idx_df = train_idx_df.drop(nan_idx_train[:,0])
-        train_idx_df['true_y'] = train_y
 
     if nan_idx_test.size != 0:
         test_y = np.delete(test_y.values, nan_idx_test, axis=0)
-        test_idx_df = test_idx_df.reset_index().drop(nan_idx_test[:,0]).drop(columns = ['index'])
-        test_idx_df['true_y'] = test_y
 
     labels = np.unique(train_y)
     transform = {k: i for i, k in enumerate(labels)}
     train_y = np.vectorize(transform.get)(train_y)
     test_y = np.vectorize(transform.get)(test_y)
 
-    # creating modality dictionary
     output_to_return_train = {}
     output_to_return_test = {}
+
+    if 'cbow' in modality_to_uselist:
+        cbow_train = bow_input.iloc[train_index].to_numpy()
+        cbow_test = bow_input.iloc[test_index].to_numpy()
+
+        scaler_cbow = StandardScaler()
+        scaler_cbow.fit(cbow_train)
+        train_X_cbow = scaler_cbow.transform(cbow_train)
+        test_X_cbow = scaler_cbow.transform(cbow_test)
+
+        if nan_idx_train.size != 0:
+            train_X_cbow = np.delete(train_X_cbow, nan_idx_train, axis=0)
+        if nan_idx_test.size != 0:
+            test_X_cbow = np.delete(test_X_cbow, nan_idx_test, axis=0)
+
+        output_to_return_train['cbow'] = train_X_cbow
+        output_to_return_test['cbow'] = test_X_cbow
+
+        del train_X_cbow, test_X_cbow
+
+    if ('preops_o' in modality_to_uselist) or ('preops_l' in modality_to_uselist):
+        # read the metadata file, seperate out the indices of labs and encoded labs from it and then use them to seperate in the laoded processed preops files above
+        md_filename = out_dir + 'preops_metadata_' + str(outcome) + "_" + datetime.now().strftime("%y-%m-%d") + '.json'
+        if os.path.exists(md_filename):
+            md_f1 = open(md_filename)
+        else:
+            print(" Need a valid meta data file name")
+            exit()
+        metadata_icu = json.load(md_f1)
+        all_column_names = metadata_icu['column_all_names']
+        all_column_names.remove('person_integer')
+
+        # lab names
+        f =open(data_dir + 'mapping_info/used_labs.txt')
+        preoplabnames = f.read()
+        f.close()
+        preoplabnames_f = preoplabnames.split('\n')[:-1]
+
+        # labs_to_sep = [i for i in all_column_names: if i in preoplabnames_f elif i.split("_")[:-1] in preoplabnames_f]
+        labs_to_sep = []
+        for i in all_column_names:
+            if i in preoplabnames_f:
+                labs_to_sep.append(i)
+            else:
+                try:
+                    if i.split("_")[:-1][0] in preoplabnames_f:
+                        labs_to_sep.append(i)
+                except IndexError:
+                    pass
+
+        lab_indices_Sep = [all_column_names.index(i) for i in labs_to_sep]
+        # preop_indices = [i for i in range(len(all_column_names)) if i not in lab_indices_Sep]
+
+        # this is when the pmh and problist modalities are being used
+        if 'pmh' in modality_to_uselist or 'problist' in modality_to_uselist:
+            # dropping the pmh and problist columns from the preop list
+            to_drop_old_pmh_problist = ["MentalHistory_anxiety", "MentalHistory_bipolar", "MentalHistory_depression",
+                                        "MentalHistory_schizophrenia", "PNA", "delirium_history", "MentalHistory_adhd",
+                                        "MentalHistory_other", "opioids_count", "total_morphine_equivalent_dose",
+                                        'pre_aki_status', 'preop_ICU', 'preop_los']
+
+            preop_indices = [all_column_names.index(i) for i in all_column_names if i not in (labs_to_sep + to_drop_old_pmh_problist)]
+        else:
+            preop_indices = [all_column_names.index(i) for i in all_column_names if i not in (labs_to_sep)]
+
+        preops_train_true = preops_tr.values[:, preop_indices]
+        preops_test_true = preops_te.values[:, preop_indices]
+
+        preops_train_labs = preops_tr.values[:, lab_indices_Sep]
+        preops_test_labs = preops_te.values[:, lab_indices_Sep]
+
+        # is the scaling needed again as the preops have been processes already?
+        scaler = StandardScaler()
+        scaler.fit(preops_train_true)
+        train_X_pr_o = scaler.transform(preops_train_true)  # o here means only the non labs
+        test_X_pr_o = scaler.transform(preops_test_true)
+
+        # is the scaling needed again as the preops have been processes already?
+        scaler = StandardScaler()
+        scaler.fit(preops_train_labs)
+        train_X_pr_l = scaler.transform(preops_train_labs)  # l here means preop labs
+        test_X_pr_l = scaler.transform(preops_test_labs)
+
+        if nan_idx_train.size != 0:
+            train_X_pr_o = np.delete(train_X_pr_o, nan_idx_train, axis=0)
+            train_X_pr_l = np.delete(train_X_pr_l, nan_idx_train, axis=0)
+
+        if nan_idx_test.size != 0:
+            test_X_pr_o = np.delete(test_X_pr_o, nan_idx_test, axis=0)
+            test_X_pr_l = np.delete(test_X_pr_l, nan_idx_test, axis=0)
+
+        output_to_return_train['preops_o'] = train_X_pr_o
+        output_to_return_test['preops_o'] = test_X_pr_o
+
+        output_to_return_train['preops_l'] = train_X_pr_l
+        output_to_return_test['preops_l'] = test_X_pr_l
+
+        del train_X_pr_o, train_X_pr_l, test_X_pr_o, test_X_pr_l
+
+    if 'homemeds' in modality_to_uselist:
+        # home meds reading and processing
+        home_meds = pd.read_csv(data_dir + 'home_med_cui.csv', low_memory=False)
+        Drg_pretrained_embedings = pd.read_csv(data_dir + 'df_cui_vec_2sourceMappedWODupl.csv')
+
+        # home_meds[["orlogid_encoded","rxcui"]].groupby("orlogid_encoded").agg(['count'])
+        # home_med_dose = home_meds.pivot(index='orlogid_encoded', columns='rxcui', values='Dose')
+        home_meds = home_meds.drop_duplicates(subset=['orlogid_encoded',
+                                                      'rxcui'])  # because there exist a lot of duplicates if you do not consider the dose column which we dont as of now
+        home_meds_embedded = home_meds[['orlogid_encoded', 'rxcui']].merge(Drg_pretrained_embedings, how='left',
+                                                                           on='rxcui')
+        home_meds_embedded.drop(columns=['code', 'description', 'source'], inplace=True)
+
+        home_meds_sum = home_meds_embedded.groupby("orlogid_encoded").sum().reset_index()
+        home_meds_sum = home_meds_sum.merge(new_index, on="orlogid_encoded", how="inner").set_index(
+            'new_person').reindex(
+            list(range(preops.index.min(), preops.index.max() + 1)), fill_value=0).reset_index().drop(
+            ["orlogid_encoded"],
+            axis=1).rename(
+            {"new_person": "person_integer"}, axis=1).sort_values(["person_integer"]).reset_index(drop=True).drop(
+            ["person_integer"], axis=1)
+        home_meds_sum.fillna(0, inplace=True)  # setting the value for the ones that were added later
+
+
+        home_meds_sum = home_meds_sum.drop(["rxcui"], axis=1)
+        home_meds_final = home_meds_sum
+
+        hm_tr = home_meds_final.iloc[train_index].to_numpy()
+        hm_te = home_meds_final.iloc[test_index].to_numpy()
+
+        # scaling only the embeded homemed version
+        scaler_hm = StandardScaler()
+        scaler_hm.fit(hm_tr)
+        train_X_hm = scaler_hm.transform(hm_tr)
+        test_X_hm = scaler_hm.transform(hm_te)
+
+        if nan_idx_train.size != 0:
+            train_X_hm = np.delete(train_X_hm, nan_idx_train, axis=0)
+        if nan_idx_test.size != 0:
+            test_X_hm = np.delete(test_X_hm, nan_idx_test, axis=0)
+
+        output_to_return_train['homemeds'] = train_X_hm
+        output_to_return_test['homemeds'] = test_X_hm
+
+        del train_X_hm, test_X_hm
+
+    if 'pmh' in modality_to_uselist:
+
+        pmh_emb_sb = pd.read_csv(data_dir + 'pmh_sherbert.csv')
+
+        pmh_emb_sb = pmh_emb_sb.groupby("orlogid_encoded").sum().reset_index()
+        pmh_emb_sb_final = pmh_emb_sb.merge(new_index, on="orlogid_encoded", how="inner").set_index(
+            'new_person').reindex(list(range(preops.index.min(), preops.index.max() + 1)),
+                                  fill_value=0).reset_index().drop(["orlogid_encoded"], axis=1).rename(
+            {"new_person": "person_integer"}, axis=1).sort_values(["person_integer"]).reset_index(drop=True).drop(
+            ["person_integer"], axis=1)
+
+        pmh_tr = pmh_emb_sb_final.iloc[train_index].to_numpy()
+        pmh_te = pmh_emb_sb_final.iloc[test_index].to_numpy()
+
+
+        # scaling the pmh
+        scaler_pmh = StandardScaler()
+        scaler_pmh.fit(pmh_tr)
+        train_X_pmh = scaler_pmh.transform(pmh_tr)
+        test_X_pmh = scaler_pmh.transform(pmh_te)
+
+        if nan_idx_train.size != 0:
+            train_X_pmh = np.delete(train_X_pmh, nan_idx_train, axis=0)
+        if nan_idx_test.size != 0:
+            test_X_pmh = np.delete(test_X_pmh, nan_idx_test, axis=0)
+
+        output_to_return_train['pmh'] = train_X_pmh
+        output_to_return_test['pmh'] = test_X_pmh
+
+        del train_X_pmh, test_X_pmh
+
+    if 'problist' in modality_to_uselist:
+        prob_list_emb_sb = pd.read_csv(data_dir + 'preproblems_sherbert.csv')
+
+        prob_list_emb_sb = prob_list_emb_sb.groupby("orlogid_encoded").sum().reset_index()
+        prob_list_emb_sb_final = prob_list_emb_sb.merge(new_index, on="orlogid_encoded", how="inner").set_index(
+            'new_person').reindex(list(range(preops.index.min(), preops.index.max() + 1)),
+                                  fill_value=0).reset_index().drop(["orlogid_encoded"], axis=1).rename(
+            {"new_person": "person_integer"}, axis=1).sort_values(["person_integer"]).reset_index(drop=True).drop(
+            ["person_integer"], axis=1)
+
+        problist_tr = prob_list_emb_sb_final.iloc[train_index].to_numpy()
+        problist_te = prob_list_emb_sb_final.iloc[test_index].to_numpy()
+
+        # scaling the prob_list
+        scaler_problist = StandardScaler()
+        scaler_problist.fit(problist_tr)
+        train_X_problist = scaler_problist.transform(problist_tr)
+        test_X_problist = scaler_problist.transform(problist_te)
+
+        if nan_idx_train.size != 0:
+            train_X_problist = np.delete(train_X_problist, nan_idx_train, axis=0)
+        if nan_idx_test.size != 0:
+            test_X_problist = np.delete(test_X_problist, nan_idx_test, axis=0)
+
+        output_to_return_train['problist'] = train_X_problist
+        output_to_return_test['problist'] = test_X_problist
+
+        del train_X_problist, test_X_problist
+
     if 'flow' in modality_to_uselist:
-        dense_flowsheet_train = np.load(data_dir + "flowsheet_very_dense_proc_tr.npy")
-        dense_flowsheet_test = np.load(data_dir + "flowsheet_very_dense_proc_te.npy")
-        dense_flowsheet_valid = np.load(data_dir + "flowsheet_very_dense_proc_val.npy")
+        # flowsheet data
+        very_dense_flow = feather.read_feather(data_dir + "flow_ts/Imputed_very_dense_flow.feather")
+        very_dense_flow.drop(very_dense_flow[very_dense_flow['timepoint'] > 511].index, inplace=True)
+        very_dense_flow = very_dense_flow.merge(end_of_case_times[['orlogid_encoded', 'endtime']], on="orlogid_encoded")
+        very_dense_flow = very_dense_flow.loc[very_dense_flow['endtime'] > very_dense_flow['timepoint']]
+        very_dense_flow.drop(["endtime"], axis=1, inplace=True)
 
-        other_flowsheet_train = np.load(data_dir + "other_flow_dense_proc_train.npy")
-        other_flowsheet_test = np.load(data_dir + "other_flow_dense_proc_test.npy")
-        other_flowsheet_valid = np.load(data_dir + "other_flow_dense_proc_valid.npy")
+        other_intra_flow_wlabs = feather.read_feather(data_dir + "flow_ts/Imputed_other_flow.feather")
+        other_intra_flow_wlabs.drop(other_intra_flow_wlabs[other_intra_flow_wlabs['timepoint'] > 511].index,
+                                    inplace=True)
+        other_intra_flow_wlabs = other_intra_flow_wlabs.merge(end_of_case_times[['orlogid_encoded', 'endtime']],
+                                                              on="orlogid_encoded")
+        other_intra_flow_wlabs = other_intra_flow_wlabs.loc[
+            other_intra_flow_wlabs['endtime'] > other_intra_flow_wlabs['timepoint']]
+        other_intra_flow_wlabs.drop(["endtime"], axis=1, inplace=True)
 
-        train_Xflow = np.concatenate((dense_flowsheet_train, other_flowsheet_train), axis=2)
-        test_Xflow = np.concatenate((dense_flowsheet_test, other_flowsheet_test), axis=2)
+        very_dense_flow = very_dense_flow.merge(new_index, on="orlogid_encoded", how="inner").drop(["orlogid_encoded"],
+                                                                                                   axis=1).rename(
+            {"new_person": "person_integer"}, axis=1)
+        other_intra_flow_wlabs = other_intra_flow_wlabs.merge(new_index, on="orlogid_encoded", how="inner").drop(
+            ["orlogid_encoded"], axis=1).rename({"new_person": "person_integer"}, axis=1)
 
-        if outcome == 'icu':
-            test_Xflow = test_Xflow[test_index]
+        """ TS flowsheet proprocessing """
+        # need to convert the type of orlogid_encoded from object to int
+        other_intra_flow_wlabs['person_integer'] = other_intra_flow_wlabs['person_integer'].astype('int')
+        very_dense_flow['person_integer'] = very_dense_flow['person_integer'].astype('int')
+
+        index_med_other_flow = torch.tensor(
+            other_intra_flow_wlabs[['person_integer', 'timepoint', 'measure_index']].values,
+            dtype=int)
+        value_med_other_flow = torch.tensor(other_intra_flow_wlabs['VALUE'].values)
+        flowsheet_other_flow = torch.sparse_coo_tensor(torch.transpose(index_med_other_flow, 0, 1),
+                                                       value_med_other_flow, dtype=torch.float32)
+
+        index_med_very_dense = torch.tensor(very_dense_flow[['person_integer', 'timepoint', 'measure_index']].values,
+                                            dtype=int)
+        value_med_very_dense = torch.tensor(very_dense_flow['VALUE'].values)
+        flowsheet_very_dense_sparse_form = torch.sparse_coo_tensor(torch.transpose(index_med_very_dense, 0, 1),
+                                                                   value_med_very_dense,
+                                                                   dtype=torch.float32)  ## this is memory heavy and could be skipped, only because it is making a copy not really because it is harder to store
+        flowsheet_very_dense = flowsheet_very_dense_sparse_form.to_dense()
+        flowsheet_very_dense = torch.cumsum(flowsheet_very_dense, dim=1)
+
+        train_Xflow = np.concatenate((flowsheet_very_dense[train_index, :, :], torch.index_select(flowsheet_other_flow, 0, torch.tensor(train_index)).coalesce().to_dense()), axis=2)
+        test_Xflow = np.concatenate((flowsheet_very_dense[test_index, :, :], torch.index_select(flowsheet_other_flow, 0, torch.tensor(test_index)).coalesce().to_dense()), axis=2)
 
         scaler = StandardScaler()
         scaler.fit(train_Xflow.reshape(-1, train_Xflow.shape[-1]))
@@ -264,25 +628,84 @@ def load_epic(dataset, outcome, modality_to_uselist, data_dir):  #dataset is whe
         del train_Xflow, test_Xflow
 
     if 'meds' in modality_to_uselist:
-        dense_med_doses_train = torch.from_numpy(np.load(data_dir + "dense_med_dose_proc_train.npy"))
-        dense_med_doses_test = torch.from_numpy(np.load(data_dir + "dense_med_dose_proc_test.npy"))
-        dense_med_doses_valid = torch.from_numpy(np.load(data_dir + "dense_med_dose_proc_valid.npy"))
+        # reading the med files
+        all_med_data = feather.read_feather(data_dir + 'med_ts/intraop_meds_filterd.feather')
+        all_med_data.drop(all_med_data[all_med_data['time'] > 511].index, inplace=True)
+        all_med_data = all_med_data.merge(end_of_case_times[['orlogid_encoded', 'endtime']], on="orlogid_encoded")
+        all_med_data = all_med_data.loc[all_med_data['endtime'] > all_med_data['time']]
+        all_med_data.drop(["endtime"], axis=1, inplace=True)
 
-        dense_med_id_train = torch.from_numpy(np.load(data_dir + "dense_med_id_proc_train.npy"))
-        dense_med_id_test = torch.from_numpy(np.load(data_dir + "dense_med_id_proc_test.npy"))
-        dense_med_id_valid = torch.from_numpy(np.load(data_dir + "dense_med_id_proc_valid.npy"))
+        ## Special med * unit comb encoding
+        all_med_data['med_unit_comb'] = list(zip(all_med_data['med_integer'], all_med_data['unit_integer']))
+        med_unit_coded, med_unit_unique_codes = pd.factorize(all_med_data['med_unit_comb'])
+        all_med_data['med_unit_comb'] = med_unit_coded
 
-        dense_med_units_train = torch.from_numpy(np.load(data_dir + "dense_med_units_proc_train.npy"))
-        dense_med_units_test = torch.from_numpy(np.load(data_dir + "dense_med_units_proc_test.npy"))
-        dense_med_units_valid = torch.from_numpy(np.load(data_dir + "dense_med_units_proc_valid.npy"))
+        a = pd.DataFrame(columns=['med_integer', 'unit_integer', 'med_unit_combo'])
+        a['med_integer'] = [med_unit_unique_codes[i][0] for i in range(len(med_unit_unique_codes))]
+        a['unit_integer'] = [med_unit_unique_codes[i][1] for i in range(len(med_unit_unique_codes))]
+        a['med_unit_combo'] = np.arange(len(med_unit_unique_codes))
+        a.sort_values(by=['med_integer', 'med_unit_combo'], inplace=True)
 
-        # breakpoint()
-        train_X_med = torch.cat([dense_med_id_train, dense_med_doses_train, dense_med_units_train],dim=2).cpu().numpy()
-        test_X_med = torch.cat([dense_med_id_test, dense_med_doses_test, dense_med_units_test], dim=2).cpu().numpy()
+        group_start = (torch.tensor(a['med_integer']) != torch.roll(torch.tensor(a['med_integer']),
+                                                                    1)).nonzero().squeeze() + 1  # this one is needed becasue otherwise there was some incompatibbility while the embeddginff for the combination are being created.
+        group_end = (torch.tensor(a['med_integer']) != torch.roll(torch.tensor(a['med_integer']),
+                                                                  -1)).nonzero().squeeze() + 1  # this one is needed becasue otherwise there was some incompatibbility while the embeddginff for the combination are being created.
 
-        if outcome == 'icu':
-            test_X_med = test_X_med[test_index]
+        group_start = torch.cat((torch.tensor(0).reshape((1)),
+                                 group_start))  # prepending 0 to make sure that it is treated as an empty slot
+        group_end = torch.cat(
+            (torch.tensor(0).reshape((1)), group_end))  # prepending 0 to make sure that it is treated as an empty slot
 
+        drug_med_ids = all_med_data[['orlogid_encoded', 'time', 'drug_position', 'med_integer']]
+
+        drug_med_id_map = feather.read_feather(data_dir + 'med_ts/med_id_map.feather')
+        drug_words = None
+        word_id_map = None
+
+        # drug_dose = all_med_data[['orlogid_encoded', 'time', 'drug_position', 'unit_integer',
+        #                           'dose']]
+        drug_dose = all_med_data[['orlogid_encoded', 'time', 'drug_position', 'med_unit_comb',
+                                  'dose']]  # replacing the unit_integer column by med_unit_comb column
+
+        drug_dose = drug_dose.merge(new_index, on="orlogid_encoded", how="inner").drop(["orlogid_encoded"],
+                                                                                       axis=1).rename(
+            {"new_person": "person_integer"}, axis=1)
+
+        if drug_words is not None:
+            drug_words = drug_words.merge(new_index, on="orlogid_encoded", how="inner").drop(["orlogid_encoded"],
+                                                                                             axis=1).rename(
+                {"new_person": "person_integer"}, axis=1)
+
+        if drug_med_ids is not None:
+            drug_med_ids = drug_med_ids.merge(new_index, on="orlogid_encoded", how="inner").drop(["orlogid_encoded"],
+                                                                                                 axis=1).rename(
+                {"new_person": "person_integer"}, axis=1)
+
+        ## I suppose these could have sorted differently
+        ## TODO apparently, torch.from_numpy shares the memory buffer and inherits type
+        index_med_ids = torch.tensor(drug_med_ids[['person_integer', 'time', 'drug_position']].values, dtype=int)
+        index_med_dose = torch.tensor(drug_dose[['person_integer', 'time', 'drug_position']].values, dtype=int)
+        value_med_dose = torch.tensor(drug_dose['dose'].astype('float').values, dtype=float)
+        value_med_unit = torch.tensor(drug_dose['med_unit_comb'].values, dtype=int)
+
+        add_unit = 0 in value_med_unit.unique()
+        dense_med_units = torch.sparse_coo_tensor(torch.transpose(index_med_dose, 0, 1), value_med_unit + add_unit,
+                                                  dtype=torch.int32)
+        dense_med_dose = torch.sparse_coo_tensor(torch.transpose(index_med_dose, 0, 1), value_med_dose,
+                                                 dtype=torch.float32)
+
+        value_med_ids = torch.tensor(drug_med_ids['med_integer'].values, dtype=int)
+        add_med = 0 in value_med_ids.unique()
+        dense_med_ids = torch.sparse_coo_tensor(torch.transpose(index_med_ids, 0, 1), value_med_ids + add_med,
+                                                dtype=torch.int32)
+
+
+        train_X_med = torch.cat([torch.index_select(dense_med_ids, 0, torch.tensor(train_index)).coalesce().to_dense(),
+                           torch.index_select(dense_med_dose, 0, torch.tensor(train_index)).coalesce().to_dense(),
+                           torch.index_select(dense_med_units, 0, torch.tensor(train_index)).coalesce().to_dense()],dim=2).cpu().numpy()
+        test_X_med = torch.cat([torch.index_select(dense_med_ids, 0, torch.tensor(test_index)).coalesce().to_dense(),
+                           torch.index_select(dense_med_dose, 0, torch.tensor(test_index)).coalesce().to_dense(),
+                           torch.index_select(dense_med_units, 0, torch.tensor(test_index)).coalesce().to_dense()], dim=2).cpu().numpy()
         if nan_idx_train.size != 0:
             train_X_med = np.delete(train_X_med, nan_idx_train, axis=0)
         if nan_idx_test.size != 0:
@@ -294,15 +717,42 @@ def load_epic(dataset, outcome, modality_to_uselist, data_dir):  #dataset is whe
         del train_X_med, test_X_med
 
     if 'alerts' in modality_to_uselist:
-        alerts = torch.from_numpy(np.load(
-            data_dir + "alerts_single_final_sparse_tensor.npy"))  # train_idx[train_idx['train_id_or_not']==1]['new_person']
-        alerts_train = alerts[train_idx[train_idx['train_id_or_not'] == 1]['new_person'].values, :, :]
-        alerts_test = alerts[train_idx[train_idx['train_id_or_not'] == 0]['new_person'].values, :, :]
-        train_Xalert = alerts_train.cpu().numpy()
-        test_Xalert = alerts_test.cpu().numpy()
 
-        if outcome == 'icu':
-            test_Xalert = test_Xalert[test_index]
+        alerts = pd.read_csv(data_dir +'epic_alerts.csv')
+        alerts.drop(alerts[alerts['time'] > 511].index, inplace=True)
+        alerts = alerts.merge(new_index, on="orlogid_encoded", how="inner").drop(["orlogid_encoded"], axis=1).rename(
+            {"new_person": "person_integer"},
+            axis=1)  # not taking the left because its creating unnecessary nanas that can be possibly handled by the sparse thing
+
+        alerts_df = alerts[['time', 'atom', 'overall_relevant', 'overall_interv', 'person_integer']]
+        # alerts_df_encoded = pd.get_dummies(alerts_df, columns=['atom'], )
+        alert_columns = [i for i in alerts_df if i not in ['person_integer', 'time', 'atom']]
+        for i in alert_columns:
+            alerts_df[i] = alerts_df[i].astype(int)
+        alerts_df = alerts_df.sort_values(by=[
+            'person_integer']).drop_duplicates()  # this is being done because we are not using the alertid which was a subgrouper
+
+        # need to change the encoding to account for the values which are not present (spike nature kind); in case of one hot encoded its fine because 0 represents not present
+        alerts_df.loc[alerts_df['overall_interv'] == 0, 'overall_interv'] = -1
+        alerts_df.loc[alerts_df['overall_relevant'] == 0, 'overall_relevant'] = -1
+        alerts_df = alerts_df.sort_values(by=['person_integer', 'time', 'overall_relevant', 'overall_interv', 'atom'])
+        # alerts_df = alerts_df.drop_duplicates(subset=['person_integer', 'time', 'atom'], keep='last') # this doesn't have any duplicates now and any time point the final decision is used
+        alerts_df = alerts_df.drop_duplicates(subset=['person_integer', 'time'], keep='last').drop(columns=[
+            'atom'])  # this doesn't have any duplicates and at any time point only one alert is being used (the one with positive relevance if present)
+        # need to convert the text to number in the atom columns
+        # from sklearn.preprocessing import LabelEncoder
+        #
+        # le = LabelEncoder()
+        # alerts_df['atom'] = le.fit_transform(alerts_df['atom'])
+
+        # index_alerts = torch.tensor(alerts_df[['person_integer', 'time', 'atom']].values, dtype=int)
+        index_alerts = torch.tensor(alerts_df[['person_integer', 'time']].values, dtype=int)
+        value_alerts = torch.tensor(alerts_df[alert_columns].values, dtype=int)
+        # alerts_final_sparse = torch.sparse_coo_tensor(torch.transpose(index_alerts, 0, 1), value_alerts, size=[dense_med_ids.size()[0], alerts_df['time'].max()+1 , len(alerts_df['atom'].unique()), len(alert_columns) ], dtype=torch.int64)
+        alerts_final_sparse = torch.sparse_coo_tensor(torch.transpose(index_alerts, 0, 1), value_alerts,size=[len(combined_case_set), alerts_df['time'].max() + 1, len(alert_columns)], dtype=torch.int64)
+
+        train_Xalert = torch.index_select(alerts_final_sparse, 0, torch.tensor(train_index)).coalesce().to_dense().cpu().numpy()
+        test_Xalert = torch.index_select(alerts_final_sparse, 0, torch.tensor(test_index)).coalesce().to_dense().cpu().numpy()
 
         if nan_idx_train.size != 0:
             train_Xalert = np.delete(train_Xalert, nan_idx_train, axis=0)
@@ -315,11 +765,11 @@ def load_epic(dataset, outcome, modality_to_uselist, data_dir):  #dataset is whe
         del train_Xalert, test_Xalert
 
     if 'postopcomp' in modality_to_uselist:
-        # since in the current setup the missingness is distributed equally between the train and test set so we can drop the non outcomes as follows and then add missingness masks for only those outcomes
-        outcomes_train = train_id_withoutcomes[train_id_withoutcomes['train_id_or_not'] == 1].drop(
-            columns=['new_person', 'orlogid_encoded', 'train_id_or_not', 'unit'])
-        outcomes_test = train_id_withoutcomes[train_id_withoutcomes['train_id_or_not'] == 0].drop(
-            columns=['new_person', 'orlogid_encoded', 'train_id_or_not', 'unit'])
+        # also dropping the unit column from the outcomesn
+        outcomes = outcomes.merge(new_index, on="orlogid_encoded", how="inner").set_index('new_person').reindex(list(range(preops.index.min(), preops.index.max() + 1)), fill_value=0).reset_index().drop(["orlogid_encoded", 'unit'], axis=1).rename({"new_person": "person_integer"}, axis=1).sort_values(["person_integer"]).reset_index(drop=True).drop(["person_integer"], axis=1)
+        outcomes_train = outcomes.iloc[train_index]
+        outcomes_test = outcomes.iloc[test_index]
+
 
         # admit_day outcome is 'the days after surgery of the ICU admission'
         for col in outcomes_train.columns:
@@ -354,203 +804,6 @@ def load_epic(dataset, outcome, modality_to_uselist, data_dir):  #dataset is whe
 
         del outcomes_train, outcomes_test
 
-    if 'homemeds' in modality_to_uselist:
-        ## reading home meds
-        home_meds_embedsum = pd.read_csv(data_dir+'Home_meds_embeddedSum_indexed.csv')
-        home_meds_embedsum_tr_te = train_idx.merge(home_meds_embedsum.drop(columns= ['orlogid_encoded']), on=['new_person'], how='left')
-        home_meds_embedsum_train = home_meds_embedsum_tr_te[home_meds_embedsum_tr_te['train_id_or_not']==1].drop(columns=['new_person','orlogid_encoded', 'train_id_or_not', 'rxcui'])
-        home_meds_embedsum_test = home_meds_embedsum_tr_te[home_meds_embedsum_tr_te['train_id_or_not']==0].drop(columns=['new_person','orlogid_encoded', 'train_id_or_not', 'rxcui'])
-
-        if outcome == 'icu':
-            home_meds_embedsum_test = home_meds_embedsum_test.iloc[test_index]
-
-        if False:
-            home_meds_ohe = pd.read_csv(data_dir + 'Home_meds_ohe_indexed.csv')
-            home_meds_ohe_tr_te = train_idx.merge(home_meds_ohe.drop(columns=['orlogid_encoded']), on=['new_person'],
-                                                  how='left')
-            home_meds_ohe_train = home_meds_ohe_tr_te[home_meds_ohe_tr_te['train_id_or_not']==1].drop(columns=['new_person','orlogid_encoded', 'train_id_or_not'])
-            home_meds_ohe_test = home_meds_ohe_tr_te[home_meds_ohe_tr_te['train_id_or_not']==0].drop(columns=['new_person','orlogid_encoded', 'train_id_or_not'])
-
-        # scaling only the embeded homemed version
-        scaler_hm = StandardScaler()
-        scaler_hm.fit(home_meds_embedsum_train)
-        train_X_hm = scaler_hm.transform(home_meds_embedsum_train)
-        test_X_hm = scaler_hm.transform(home_meds_embedsum_test)
-
-        if nan_idx_train.size != 0:
-            train_X_hm = np.delete(train_X_hm, nan_idx_train, axis=0)
-        if nan_idx_test.size != 0:
-            test_X_hm = np.delete(test_X_hm, nan_idx_test, axis=0)
-
-        output_to_return_train['homemeds'] = train_X_hm
-        output_to_return_test['homemeds'] = test_X_hm
-
-        del train_X_hm, test_X_hm
-
-    if 'pmh' in modality_to_uselist:
-        pmh_embeded = pd.read_csv(data_dir + 'pmh_emb_sb_indexed.csv')
-        pmh_embeded_tr_te = train_idx.merge(pmh_embeded.drop(columns=['orlogid_encoded']), on=['new_person'],
-                                            how='left')
-        pmh_embeded_train = pmh_embeded_tr_te[pmh_embeded_tr_te['train_id_or_not'] == 1].drop(
-            columns=['new_person', 'orlogid_encoded', 'train_id_or_not'])
-        pmh_embeded_test = pmh_embeded_tr_te[pmh_embeded_tr_te['train_id_or_not'] == 0].drop(
-            columns=['new_person', 'orlogid_encoded', 'train_id_or_not'])
-
-        if outcome == 'icu':
-            pmh_embeded_test = pmh_embeded_test.iloc[test_index]
-
-        # scaling the pmh
-        scaler_pmh = StandardScaler()
-        scaler_pmh.fit(pmh_embeded_train)
-        train_X_pmh = scaler_pmh.transform(pmh_embeded_train)
-        test_X_pmh = scaler_pmh.transform(pmh_embeded_test)
-
-        if nan_idx_train.size != 0:
-            train_X_pmh = np.delete(train_X_pmh, nan_idx_train, axis=0)
-        if nan_idx_test.size != 0:
-            test_X_pmh = np.delete(test_X_pmh, nan_idx_test, axis=0)
-
-        output_to_return_train['pmh'] = train_X_pmh
-        output_to_return_test['pmh'] = test_X_pmh
-
-        del train_X_pmh, test_X_pmh
-
-    if 'problist' in modality_to_uselist:
-        prob_list_embeded = pd.read_csv(data_dir + 'prob_list_emb_sb_indexed.csv')
-        prob_list_embeded_tr_te = train_idx.merge(prob_list_embeded.drop(columns=['orlogid_encoded']),
-                                                  on=['new_person'], how='left')
-        prob_list_embeded_train = prob_list_embeded_tr_te[prob_list_embeded_tr_te['train_id_or_not'] == 1].drop(
-            columns=['new_person', 'orlogid_encoded', 'train_id_or_not'])
-        prob_list_embeded_test = prob_list_embeded_tr_te[prob_list_embeded_tr_te['train_id_or_not'] == 0].drop(
-            columns=['new_person', 'orlogid_encoded', 'train_id_or_not'])
-
-        if outcome == 'icu':
-            prob_list_embeded_test = prob_list_embeded_test.iloc[test_index]
-
-        # scaling the prob_list
-        scaler_problist = StandardScaler()
-        scaler_problist.fit(prob_list_embeded_train)
-        train_X_problist = scaler_problist.transform(prob_list_embeded_train)
-        test_X_problist = scaler_problist.transform(prob_list_embeded_test)
-
-        if nan_idx_train.size != 0:
-            train_X_problist = np.delete(train_X_problist, nan_idx_train, axis=0)
-        if nan_idx_test.size != 0:
-            test_X_problist = np.delete(test_X_problist, nan_idx_test, axis=0)
-
-        output_to_return_train['problist'] = train_X_problist
-        output_to_return_test['problist'] = test_X_problist
-
-        del train_X_problist, test_X_problist
-
-    if 'cbow' in modality_to_uselist:
-        cbow_train = np.load(data_dir + "cbow_proc_train.npy")
-        cbow_test = np.load(data_dir + "cbow_proc_test.npy")
-
-        if outcome == 'icu':
-            cbow_test = cbow_test[test_index]
-
-        scaler_cbow = StandardScaler()
-        scaler_cbow.fit(cbow_train)
-        train_X_cbow = scaler_cbow.transform(cbow_train)
-        test_X_cbow = scaler_cbow.transform(cbow_test)
-
-        if nan_idx_train.size != 0:
-            train_X_cbow = np.delete(train_X_cbow, nan_idx_train, axis=0)
-        if nan_idx_test.size != 0:
-            test_X_cbow = np.delete(test_X_cbow, nan_idx_test, axis=0)
-
-        output_to_return_train['cbow'] = train_X_cbow
-        output_to_return_test['cbow'] = test_X_cbow
-
-        del train_X_cbow, test_X_cbow
-
-    if ('preops_o' in modality_to_uselist) or ('preops_l' in modality_to_uselist):
-
-        preops_train = np.load(data_dir + "preops_proc_train.npy")
-        preops_test = np.load(data_dir + "preops_proc_test.npy")
-        preops_valid = np.load(data_dir + "preops_proc_test.npy")
-
-        if outcome=='icu':
-            preops_test = preops_test[test_index]
-
-        # read the metadata file, seperate out the indices of labs and encoded labs from it and then use them to seperate in the laoded processed preops files above
-        md_f1 = open(data_dir + 'preops_metadataicu.json')
-        metadata_icu = json.load(md_f1)
-        all_column_names = metadata_icu['column_all_names']
-        all_column_names.remove('person_integer')
-
-        # lab names
-        f =open(data_dir + 'used_labs.txt')
-        preoplabnames = f.read()
-        f.close()
-        preoplabnames_f = preoplabnames.split('\n')[:-1]
-
-
-        # labs_to_sep = [i for i in all_column_names: if i in preoplabnames_f elif i.split("_")[:-1] in preoplabnames_f]
-        labs_to_sep = []
-        for i in all_column_names:
-            if i in preoplabnames_f:
-                labs_to_sep.append(i)
-            else:
-                try:
-                    if i.split("_")[:-1][0] in preoplabnames_f:
-                        labs_to_sep.append(i)
-                except IndexError:
-                    pass
-
-
-        lab_indices_Sep = [all_column_names.index(i) for i in labs_to_sep]
-        # preop_indices = [i for i in range(len(all_column_names)) if i not in lab_indices_Sep]
-
-        # this is when the pmh and problist modalities are being used
-        if 'pmh' in modality_to_uselist or 'problist' in modality_to_uselist:
-            # dropping the pmh and problist columns from the preop list
-            to_drop_old_pmh_problist = ["MentalHistory_anxiety", "MentalHistory_bipolar", "MentalHistory_depression",
-                                        "MentalHistory_schizophrenia", "PNA", "delirium_history", "MentalHistory_adhd",
-                                        "MentalHistory_other", "opioids_count", "total_morphine_equivalent_dose",
-                                        'pre_aki_status', 'preop_ICU', 'preop_los']
-
-            preop_indices = [all_column_names.index(i) for i in all_column_names if i not in (labs_to_sep + to_drop_old_pmh_problist)]
-        else:
-            preop_indices = [all_column_names.index(i) for i in all_column_names if i not in (labs_to_sep)]
-
-
-        preops_train_true = preops_train[:, preop_indices]
-        preops_test_true = preops_test[:, preop_indices]
-
-        preops_train_labs = preops_train[:, lab_indices_Sep]
-        preops_test_labs = preops_test[:, lab_indices_Sep]
-
-        # is the scaling needed again as the preops have been processes already?
-        scaler = StandardScaler()
-        scaler.fit(preops_train_true)
-        train_X_pr_o = scaler.transform(preops_train_true)  # o here means only the non labs
-        test_X_pr_o = scaler.transform(preops_test_true)
-
-        # is the scaling needed again as the preops have been processes already?
-        scaler = StandardScaler()
-        scaler.fit(preops_train_labs)
-        train_X_pr_l = scaler.transform(preops_train_labs)  # l here means preop labs
-        test_X_pr_l = scaler.transform(preops_test_labs)
-
-        if nan_idx_train.size != 0:
-            train_X_pr_o = np.delete(train_X_pr_o, nan_idx_train, axis=0)
-            train_X_pr_l = np.delete(train_X_pr_l, nan_idx_train, axis=0)
-
-        if nan_idx_test.size != 0:
-            test_X_pr_o = np.delete(test_X_pr_o, nan_idx_test, axis=0)
-            test_X_pr_l = np.delete(test_X_pr_l, nan_idx_test, axis=0)
-
-        output_to_return_train['preops_o'] = train_X_pr_o
-        output_to_return_test['preops_o'] = test_X_pr_o
-
-        output_to_return_train['preops_l'] = train_X_pr_l
-        output_to_return_test['preops_l'] = test_X_pr_l
-
-        del train_X_pr_o, train_X_pr_l, test_X_pr_o, test_X_pr_l
-
-    # breakpoint()
-    return output_to_return_train, output_to_return_test, train_y, test_y, train_idx_df, test_idx_df
+    return output_to_return_train, output_to_return_test, train_y, test_y, outcome_df, [train_index,test_index]
 
 

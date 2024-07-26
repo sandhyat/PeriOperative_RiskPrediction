@@ -318,7 +318,7 @@ def eval_classification(model, train_data, train_pr, train_labels, test_data, te
 
 
 def eval_classification_sep1(model, proc_modality_dict_train, train_labels, proc_modality_dict_test, test_labels, all_rep,
-                        outcome, randomSeed, train_idx, test_idx,rep_save=0, eval_protocol='xgbt'):
+                        outcome, randomSeed, eval_protocol='xgbt'):
     assert train_labels.ndim == 1 or train_labels.ndim == 2
     modalities_selected = proc_modality_dict_train.keys()
     # breakpoint()
@@ -327,19 +327,12 @@ def eval_classification_sep1(model, proc_modality_dict_train, train_labels, proc
         test_data_f = proc_modality_dict_test['flow']
         train_repr_f = model.encode(train_data_f, 'f', encoding_window='full_series' if train_labels.ndim == 1 else None)
         test_repr_f = model.encode(test_data_f,  'f', encoding_window='full_series' if train_labels.ndim == 1 else None)
-        if rep_save==1:
-            test_rep_idx_f = pd.concat([test_idx.reset_index(drop=True), pd.DataFrame(test_repr_f, columns=['Col'+str(i) for i in range(test_repr_f.shape[-1])]).reset_index(drop=True)], axis=1)
-            train_rep_idx_f = pd.concat([train_idx.reset_index(drop=True), pd.DataFrame(train_repr_f, columns=['Col'+str(i) for i in range(train_repr_f.shape[-1])]).reset_index(drop=True)], axis=1)
 
     if 'meds' in modalities_selected:
         train_data_m = proc_modality_dict_train['meds']
         test_data_m = proc_modality_dict_test['meds']
         train_repr_m = model.encode(train_data_m, 'm', encoding_window='full_series' if train_labels.ndim == 1 else None)
         test_repr_m = model.encode(test_data_m,  'm', encoding_window='full_series' if train_labels.ndim == 1 else None)
-        if rep_save==1:
-            test_rep_idx_m = pd.concat([test_idx.reset_index(drop=True), pd.DataFrame(test_repr_m, columns=['Col'+str(i) for i in range(test_repr_m.shape[-1])]).reset_index(drop=True)], axis=1)
-            train_rep_idx_m = pd.concat([train_idx.reset_index(drop=True), pd.DataFrame(train_repr_m, columns=['Col'+str(i) for i in range(train_repr_m.shape[-1])]).reset_index(drop=True)], axis=1)
-
 
     if 'preops_o' in modalities_selected:
         train_pr = proc_modality_dict_train['preops_o']
@@ -449,9 +442,12 @@ def eval_classification_sep1(model, proc_modality_dict_train, train_labels, proc
     elif ('flow' in modalities_selected) and ('meds' in modalities_selected):
         train_repr = np.concatenate((train_repr_f, train_repr_m), axis=1)
         test_repr = np.concatenate((test_repr_f, test_repr_m), axis=1)
-    else:
+    elif ('flow' in modalities_selected):
         train_repr = train_repr_f
         test_repr = test_repr_f
+    elif ('meds' in modalities_selected):
+        train_repr = train_repr_m
+        test_repr = test_repr_m
 
     clf = fit_clf(train_repr, train_labels, seed=randomSeed)
     if False:
