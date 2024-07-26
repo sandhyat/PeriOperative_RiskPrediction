@@ -403,7 +403,7 @@ def objective(trial, args):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Tabular modular tabnet HP training')
+    parser = argparse.ArgumentParser(description='Tabular modular XGBT HP training')
 
     ## modalities to select
     parser.add_argument('--preops', default=True, action='store_true',
