@@ -285,7 +285,7 @@ def preprocess_train(preops,task, y_outcome=None, binary_outcome=False, test_siz
 
     # meta_Data["bow"] = bow_cols
 
-    output_file_name = output_dr + 'preops_metadata_' + str(task) + "_" + datetime.now().strftime("%y-%m-%d-%H:%M:%S") +'.json'
+    output_file_name = output_dr + 'preops_metadata_' + str(task) + "_" + datetime.now().strftime("%y-%m-%d") +'.json'
 
     with open(output_file_name, 'w') as outfile:
         json.dump(meta_Data, outfile)
