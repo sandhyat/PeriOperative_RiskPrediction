@@ -29,7 +29,7 @@ Based on varying algorithm complexity the approaches mentioned can be explained 
 Code is available in `End_to_end_supervised/`
 
 1) `Preops_processing.py`: Prepares the preoperative data including one hot encoding, missingness imputation, normalization and saves the metadata into json. Also, creates the train test partitioning on the dataset. 
-2) `Preops_GBT_baseline.py`: Trains a shallow or basic feed forward model on data available before the surgery starts.
+2) `XGBT_tabular.py`: Trains an XGBT model on data available before the surgery starts. Has a bestModel argument that runs on the best setup from HP tuning file `XGBT_tabular_HP_tuning.py`.
 3) `Training_with_TimeSeries.py`: Jointly trains a deep model (LSTM/Transformer) using all the data modalities available at the end of surgery.
 4) `preop_flow_med_bow_model.py`: Contains various deep learning architectures in the model class format that are callable in the `Training_with_TimeSeries.py` file.
 5) `Training_with_ts_Optuna_hp_tuning.py`: Used for hyperparameter tuning using Optuna as an off the shelf method. Similar functionalities are `Training_with_TimeSeries.py` but in the context of hyper parameter tuning. Currently, the best trial is not saved and the inbuilt storage of optuna is not used (for future).
