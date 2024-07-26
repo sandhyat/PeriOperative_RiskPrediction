@@ -243,7 +243,7 @@ def load_epic(outcome, modality_to_uselist, randomSeed, data_dir, out_dir):  #da
     combined_case_set = list(set(outcome_df["orlogid_encoded"].values).intersection(
         set(end_of_case_times['orlogid_encoded'].values)).intersection(
         set(preops['orlogid_encoded'].values)))
-    if True:
+    if False:
         combined_case_set = combined_case_set[:10000]
         # combined_case_set = np.random.choice(combined_case_set, 10000, replace=False)
 
