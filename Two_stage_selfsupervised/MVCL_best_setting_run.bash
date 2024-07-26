@@ -6,10 +6,10 @@
 
 # the argument taken by this file is the outcome
 
-python /codes/Two_stage_selfsupervised/train_modular.py --meds --task=$1 --bestModel=True
-python /codes/Two_stage_selfsupervised/train_modular.py --flow --task=$1 --bestModel=True
-python /codes/Two_stage_selfsupervised/train_modular.py --meds --flow --task=$1 --bestModel=True
-python /codes/Two_stage_selfsupervised/train_modular.py --meds --flow --preops --task=$1 --bestModel=True
-python /codes/Two_stage_selfsupervised/train_modular.py --meds --flow --preops --homemeds --task=$1 --bestModel=True
-python /codes/Two_stage_selfsupervised/train_modular.py --meds --flow --preops --homemeds --pmhProblist --task=$1 --bestModel=True
-python /codes/Two_stage_selfsupervised/train_modular.py --meds --flow --preops --homemeds --pmhProblist --alerts --postopcomp --onlyEval --bestModel=True
+python /codes/Two_stage_selfsupervised/train_modular.py --meds --outcome=$1 --bestModel=True
+python /codes/Two_stage_selfsupervised/train_modular.py --flow --outcome=$1 --bestModel=True
+python /codes/Two_stage_selfsupervised/train_modular.py --meds --flow --outcome=$1 --bestModel=True
+python /codes/Two_stage_selfsupervised/train_modular.py --meds --flow --preops --outcome=$1 --bestModel=True
+python /codes/Two_stage_selfsupervised/train_modular.py --meds --flow --preops --homemeds --outcome=$1 --bestModel=True
+python /codes/Two_stage_selfsupervised/train_modular.py --meds --flow --preops --homemeds --pmhProblist --outcome=$1 --bestModel=True
+python /codes/Two_stage_selfsupervised/train_modular.py --meds --flow --preops --homemeds --pmhProblist --alerts --postopcomp --onlyEval --bestModel=True --outcome=$1
