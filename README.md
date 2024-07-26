@@ -44,23 +44,24 @@ Currently, for time series code for [TS2Vec](https://github.com/yuezhihan/ts2vec
 
 Code is available in `Two_stage_selfsupervised/`
 
-1) `train_modular.py`: Calls `Multiview_CL_modular.py` for representation learning using all the modalities that are specified in the arguments. Once trained, calls `classification.py` to perform the downstream task or evaluate the learnt representation.
+1) `train_modular.py`: Calls `Multiview_CL_modular.py` for representation learning using all the modalities that are specified in the arguments. Once trained, calls `classification.py` to perform the downstream task or evaluate the learnt representation. It has a `bestModel` argument which when selected will read the HP tuned result files and retrain the models on the train+validation set of dataset. It also saves the models and performance metrics and prediction values on the common test set across all ablations and all 5 repetitions.
+The best Hp is from the all modalities (including alerts and postop complications) being used in representation learning step. The same best setup is used for all ablation cases too. The model name for this setup is `MVCL`.
 2) `Scarf_tabular.py`: [SCARF](https://arxiv.org/pdf/2106.15147) [implementation](https://github.com/clabrugere/pytorch-scarf) on the preoperative stage modalities to learn self supervised representation which is fed to an XGBT learner. It has a `bestModel` argument which when selected will read the HP tuned result files and retrain the models on the train+validation set of dataset. It also saves the models and performance metrics and prediction values on the common test set across all ablations and all 5 repetitions.
 3) `Scarf_tabular_HP_tuning.py`: Used for Scarf HP tuning using Optuna.
 4) `scarf_optuna_hp_tuning.sh`: Bash file that runs Scarf HP tuning file for different preoperative stage modalities with different random seeds. This one exposes the cuda device 1. Will need to be changed later to make it generalizable.
 
 #### 2) Requirements and implementation
 
-One can use the `requirements.txt` to install the dependencies. One can also run the codes inside a *docker container* using the docker121720/pytorch-for-ts:0.95 image. Optuna will be needed if you are running the HP tuning file `Training_with_ts_Optuna_hp_tuning.py` directly.
+One can use the `requirements.txt` to install the dependencies. One can also run the codes inside a *docker container* using the docker121720/pytorch-for-ts:1.25 image. Optuna will be needed if you are running the HP tuning file `Training_with_ts_Optuna_hp_tuning.py` directly.
 
 **Example for end-to-end supervised setup binary classification**
 ```
-docker run --rm --gpus all --privileged -v '< /PATH TO THE INPUT DATA/ >:/input/' -v '< /PATH TO THE SCRIPTS/ >:/codes/' -v '< /PATH TO THE SAVING THE OUTPUT RESULTS/ >:/output/' docker121720/pytorch-for-ts:0.95 python /codes/Training_with_TimeSeries.py --nameinfo="testing_Full_fixed_seed_withmaskOversamplingEarlyStoppingLR" --outputcsv="test_binary_outcomes.csv" --task='icu' --preopsDepth=6 --preopsWidth=20 --preopsWidthFinal=16 --bowDepth=5 --bowWidth=90 --bowWidthFinal=20 --lstmMedEmbDim=16 --lstmMedDepth=4 --lstmMedWidth=40 --lstmFlowDepth=4 --lstmFlowWidth=40 --LRPatience=3 --batchSize=120 --lstmMedDrop=0.1212 --lstmFlowDrop=0.0165 --finalDrop=0.3001 --learningRate=0.0002 --learningRateFactor=0.2482 --preopsL2=0.0004 --preopsL1=0.0029 --bowL2=0.0003 --bowL1=0.0042 --lstmMedL2=0.0003 --lstmFlowL2=0.0009 --randomSeed=350 --includeMissingnessMasks --overSampling
+docker run --rm --gpus all --privileged -v '< /PATH TO THE INPUT DATA/ >:/input/' -v '< /PATH TO THE SCRIPTS/ >:/codes/' -v '< /PATH TO THE SAVING THE OUTPUT RESULTS/ >:/output/' docker121720/pytorch-for-ts:1.25 python /codes/Training_with_TimeSeries.py --nameinfo="testing_Full_fixed_seed_withmaskOversamplingEarlyStoppingLR" --outputcsv="test_binary_outcomes.csv" --task='icu' --preopsDepth=6 --preopsWidth=20 --preopsWidthFinal=16 --bowDepth=5 --bowWidth=90 --bowWidthFinal=20 --lstmMedEmbDim=16 --lstmMedDepth=4 --lstmMedWidth=40 --lstmFlowDepth=4 --lstmFlowWidth=40 --LRPatience=3 --batchSize=120 --lstmMedDrop=0.1212 --lstmFlowDrop=0.0165 --finalDrop=0.3001 --learningRate=0.0002 --learningRateFactor=0.2482 --preopsL2=0.0004 --preopsL1=0.0029 --bowL2=0.0003 --bowL1=0.0042 --lstmMedL2=0.0003 --lstmFlowL2=0.0009 --randomSeed=350 --includeMissingnessMasks --overSampling
 ```
 
 **Example for two stage self-supervised setup binary classification**
 ```
-docker run --rm --gpus all --privileged -v '< /PATH TO THE INPUT DATA/ >:/input/' -v '< /PATH TO THE SCRIPTS/ >:/codes/' -v '< /PATH TO THE SAVING THE OUTPUT RESULTS/ >:/output/' docker121720/pytorch-for-ts:0.95 python /codes/train_modular.py Flowsheets F_output --eval --outcome=icu
+docker run --rm --gpus all --privileged -v '< /PATH TO THE INPUT DATA/ >:/input/' -v '< /PATH TO THE SCRIPTS/ >:/codes/' -v '< /PATH TO THE SAVING THE OUTPUT RESULTS/ >:/output/' docker121720/pytorch-for-ts:1.25 python /codes/train_modular.py Flowsheets F_output --eval --outcome=icu
 ```
 Based on the other available modalities, following can be added or removed ``` --preops --meds --alerts --pmh --problist --homemeds --postopcomp  ``` to the argument list. 
 
