@@ -21,7 +21,8 @@ from sklearn.metrics import roc_auc_score, average_precision_score, confusion_ma
 from datetime import datetime
 import matplotlib.pyplot as plt
 import Preops_processing as pps
-import preop_flow_med_bow_model 
+import preop_flow_med_bow_model
+import pickle
 
 # presetting the number of threads to be used
 torch.set_num_threads(8)
@@ -160,6 +161,8 @@ parser.add_argument("--trainTime", default=True, action='store_true')
 parser.add_argument("--randomSeed", default=100, type=int )
 parser.add_argument("--includeMissingnessMasks", default=False, action='store_true')
 parser.add_argument("--overSampling", default=True, action='store_true') # keep it as False when task is endofcase
+parser.add_argument("--bestModel", default="False",
+                    help='True when the best HP tuned settings are used on the train+valid setup')  #
 
 
 ## output parameters
@@ -191,31 +194,10 @@ if eval('args.meds') == True:
     modality_to_use.append('meds')
 
 
-config = dict(
-    linear_out=1,
-    p_final=args.finalDrop,
-    finalBN=args.finalBN,
-    hidden_units_final=args.preopsWidthFinal, # this is being added apriori because we are projecting the final representation to this dimension
-    weightInt=args.XavOrthWeightInt,
-)
+# data_dir = '/input/'
 
-
-# reproducibility settings
-# random_seed = 1 # or any of your favorite number
-torch.manual_seed(args.randomSeed)
-torch.cuda.manual_seed(args.randomSeed)
-torch.backends.cudnn.deterministic = True
-torch.backends.cudnn.benchmark = False
-np.random.seed(args.randomSeed)
-
-data_dir = '/input/'
-
-# out_dir = './'
-out_dir = '/output/'
-
-# reading the preop and outcome feather files
-# preops = feather.read_feather(data_dir + 'preops_reduced_for_training.feather')
-# preops = preops.drop(['MRN_encoded'], axis =1)
+out_dir = './'
+# out_dir = '/output/'
 
 preops = pd.read_csv(data_dir + 'epic_preop.csv')
 outcomes = pd.read_csv(data_dir + 'epic_outcomes.csv')
@@ -226,6 +208,10 @@ end_of_case_times = outcomes[['orlogid_encoded', 'endtime']]
 regression_outcome_list = ['postop_los', 'survival_time', 'readmission_survival', 'total_blood', 'postop_Vent_duration', 'n_glu_high',
                            'low_sbp_time','aoc_low_sbp', 'low_relmap_time', 'low_relmap_aoc', 'low_map_time', 'low_map_aoc', 'timew_pain_avg_0', 'median_pain_0', 'worst_pain_0', 'worst_pain_1']
 binary_outcome = args.task not in regression_outcome_list
+
+config = dict(
+    linear_out=1
+)
 config['binary'] = binary_outcome
 
 
@@ -328,7 +314,7 @@ combined_case_set = list(set(outcome_df["orlogid_encoded"].values).intersection(
     set(preops['orlogid_encoded'].values)))
 
 if False:
-    combined_case_set = np.random.choice(combined_case_set, 10000, replace=False)
+    combined_case_set = np.random.choice(combined_case_set, 2500, replace=False)
 
 outcome_df = outcome_df.loc[outcome_df['orlogid_encoded'].isin(combined_case_set)]
 preops = preops.loc[preops['orlogid_encoded'].isin(combined_case_set)]
@@ -348,26 +334,6 @@ endtimes = end_of_case_times.merge(new_index, on="orlogid_encoded", how="inner")
 preops = preops.merge(new_index, on="orlogid_encoded", how="inner").drop(["orlogid_encoded"], axis=1).rename(
     {"new_person": "person_integer"}, axis=1).sort_values(["person_integer"]).reset_index(drop=True)
 
-if 'preops' not in modality_to_use:
-    test_size = 0.2
-    valid_size = 0.05  # change back to 0.00005 for the full dataset
-    y_outcome = outcome_df["outcome"].values
-    preops.reset_index(drop=True, inplace=True)
-    upto_test_idx = int(test_size * len(preops))
-    test = preops.iloc[:upto_test_idx]
-    train0 = preops.iloc[upto_test_idx:]
-    if (binary_outcome == True) and (y_outcome.dtype != 'float64'):
-        train, valid = train_test_split(train0, test_size=valid_size / (1. - test_size), random_state=args.randomSeed,
-                                        stratify=y_outcome[train0.index])
-    else:
-        train, valid = train_test_split(train0, test_size=valid_size / (1. - test_size), random_state=args.randomSeed)
-
-    train_index = train.index
-    valid_index = valid.index
-    test_index = test.index
-
-    if args.task == 'icu':  # this part is basically dropping the planned icu cases from the evaluation set
-        test_index = preops.iloc[test_index][preops.iloc[test_index]['plannedDispo'] != 'ICU']['plannedDispo'].index
 
 if 'preops' in modality_to_use:
     # this is being used because we will be adding the problem list and pmh as a seperate module in this file too
@@ -392,53 +358,25 @@ if 'preops' in modality_to_use:
     preops = preops.drop(columns=to_drop_old_pmh_problist_with_others)
     bow_input = pd.read_csv(data_dir + 'cbow_proc_text.csv')
 
-
-    bow_input = bow_input.merge(new_index, on="orlogid_encoded", how="inner").set_index('new_person').reindex(list(range(preops.index.min(),preops.index.max()+1)),fill_value=0).reset_index().drop(["orlogid_encoded"], axis=1).rename(
-        {"new_person": "person_integer"}, axis=1).sort_values(["person_integer"]).reset_index(drop=True).drop(["person_integer"], axis=1)
+    bow_input = bow_input.merge(new_index, on="orlogid_encoded", how="inner").set_index('new_person').reindex(
+        list(range(preops.index.min(), preops.index.max() + 1)), fill_value=0).reset_index().drop(
+        ["orlogid_encoded"], axis=1).rename(
+        {"new_person": "person_integer"}, axis=1).sort_values(["person_integer"]).reset_index(drop=True).drop(
+        ["person_integer"], axis=1)
     bow_cols = [col for col in bow_input.columns if 'BOW' in col]
     bow_input['BOW_NA'] = np.where(np.isnan(bow_input[bow_cols[0]]), 1, 0)
     bow_input.fillna(0, inplace=True)
-
-
-    # currently sacrificing 5 data points in the valid set and using the test set to finally compute the auroc etc
-    preops_tr, preops_val, preops_te, train_index, valid_index, test_index, preops_mask = pps.preprocess_train(preops,
-                                                                                                               args.task,
-                                                                                                               y_outcome=
-                                                                                                               outcome_df[
-                                                                                                                   "outcome"].values,
-                                                                                                               binary_outcome=binary_outcome,
-                                                                                                               valid_size=0.05, random_state=args.randomSeed, input_dr=data_dir, output_dr=out_dir)  # change back to 0.00005
-
-    if args.task == 'icu':  # this part is basically dropping the planned icu cases from the evaluation set (value of plannedDispo are numeric after processing; the df has also been changed )
-        test_index = preops.iloc[test_index][preops.iloc[test_index]['plannedDispo'] != 3]['plannedDispo'].index
-        preops_te = preops_te.iloc[test_index]
-
-    preop_mask_counter = 0
-    num_preop_features = len(preops_tr.columns)
-
-    if (args.includeMissingnessMasks):
-        """  Masks for preops based on train test"""
-        if args.task == 'endofcase':
-            preops_tr_mask = pd.concat([preops_mask.iloc[train_index], preops_mask.iloc[train_index]])
-            preops_te_mask = pd.concat([preops_mask.iloc[test_index], preops_mask.iloc[test_index]])
-        else:
-            preops_tr_mask = preops_mask.iloc[train_index]
-            preops_te_mask = preops_mask.iloc[test_index]
-        preop_mask_counter = 1
 
     config['hidden_units'] = args.preopsWidth
     config['hidden_depth'] = args.preopsDepth
     config['weight_decay_preopsL2'] = args.preopsL2
     config['weight_decay_preopsL1'] = args.preopsL1
-    config['input_shape'] = num_preop_features + preop_mask_counter * num_preop_features,  # this is done so that I dont have to write a seperate condition for endofcase where the current time is being appended to preops
-
 
     config['hidden_units_bow'] = args.bowWidth
     config['hidden_units_final_bow'] = args.bowWidthFinal
     config['hidden_depth_bow'] = args.bowDepth
     config['weight_decay_bowL2'] = args.bowL2
     config['weight_decay_bowL1'] = args.bowL1
-    config['input_shape_bow'] = len(bow_input.columns)
 
 if 'homemeds' in modality_to_use:
     # home meds reading and processing
@@ -452,7 +390,7 @@ if 'homemeds' in modality_to_use:
     home_meds_embedded = home_meds[['orlogid_encoded', 'rxcui']].merge(Drg_pretrained_embedings, how='left', on='rxcui')
     home_meds_embedded.drop(columns=['code', 'description', 'source'], inplace=True)
 
-    # breakpoint()
+
     # home meds basic processing
     home_meds_freq = home_meds[['orlogid_encoded', 'rxcui', 'Frequency']].pivot_table(index='orlogid_encoded',
                                                                                       columns='rxcui',
@@ -505,14 +443,8 @@ if 'homemeds' in modality_to_use:
         value_HMmed_embed = torch.tensor(home_meds_embedded1[col_names].astype('float').values, dtype=float)
         dense_HM_embedding = torch.sparse_coo_tensor(torch.transpose(index_HM_med_ids, 0, 1), value_HMmed_embed,
                                                      dtype=torch.float32)
-        hm_tr = torch.index_select(dense_HM_embedding, 0, torch.tensor(train_index)).coalesce()
-        hm_val = torch.index_select(dense_HM_embedding, 0, torch.tensor(valid_index)).coalesce()
-        hm_te = torch.index_select(dense_HM_embedding, 0, torch.tensor(test_index)).coalesce()
         hm_input_dim = len(col_names)
     else:
-        hm_tr = torch.tensor(home_meds_final.iloc[train_index].to_numpy(), dtype=torch.float32)
-        hm_te = torch.tensor(home_meds_final.iloc[test_index].to_numpy(), dtype=torch.float32)
-        hm_val = torch.tensor(home_meds_final.iloc[valid_index].to_numpy(), dtype=torch.float32)
         hm_input_dim = len(home_meds_final.columns)
 
     config['hidden_units_hm'] = args.hmWidth
@@ -525,8 +457,6 @@ if 'homemeds' in modality_to_use:
     config['Att_HM_agg_Heads'] = args.AttentionHomeMedsAggHeads
 
 if 'pmh' in modality_to_use:
-
-
     pmh_emb_sb = pd.read_csv(data_dir + 'pmh_sherbert.csv')
 
     if args.pmhform == 'embedding_sum':
@@ -534,9 +464,6 @@ if 'pmh' in modality_to_use:
         pmh_emb_sb_final = pmh_emb_sb.merge(new_index, on="orlogid_encoded", how="inner").set_index('new_person').reindex(list(range(preops.index.min(), preops.index.max() + 1)), fill_value=0).reset_index().drop(["orlogid_encoded"], axis=1).rename(
             {"new_person": "person_integer"}, axis=1).sort_values(["person_integer"]).reset_index(drop=True).drop(["person_integer"], axis=1)
 
-        pmh_tr = torch.tensor(pmh_emb_sb_final.iloc[train_index].to_numpy(), dtype=torch.float32)
-        pmh_te = torch.tensor(pmh_emb_sb_final.iloc[test_index].to_numpy(), dtype=torch.float32)
-        pmh_val = torch.tensor(pmh_emb_sb_final.iloc[valid_index].to_numpy(), dtype=torch.float32)
         pmh_input_dim = len(pmh_emb_sb_final.columns)
 
     if args.pmhform == 'embedding_attention':
@@ -554,9 +481,6 @@ if 'pmh' in modality_to_use:
         value_pmh_embed = torch.tensor(pmh_emb_sb1[col_names].astype('float').values, dtype=float)
         dense_pmh_embedding = torch.sparse_coo_tensor(torch.transpose(index_pmh_ids, 0, 1), value_pmh_embed,
                                                      dtype=torch.float32)
-        pmh_tr = torch.index_select(dense_pmh_embedding, 0, torch.tensor(train_index)).coalesce()
-        pmh_val = torch.index_select(dense_pmh_embedding, 0, torch.tensor(valid_index)).coalesce()
-        pmh_te = torch.index_select(dense_pmh_embedding, 0, torch.tensor(test_index)).coalesce()
         pmh_input_dim = len(col_names)
 
     config['hidden_units_pmh'] = args.pmhWidth
@@ -576,9 +500,6 @@ if 'problist' in modality_to_use:
         prob_list_emb_sb_final = prob_list_emb_sb.merge(new_index, on="orlogid_encoded", how="inner").set_index('new_person').reindex(list(range(preops.index.min(), preops.index.max() + 1)), fill_value=0).reset_index().drop(["orlogid_encoded"], axis=1).rename(
             {"new_person": "person_integer"}, axis=1).sort_values(["person_integer"]).reset_index(drop=True).drop(["person_integer"], axis=1)
 
-        problist_tr = torch.tensor(prob_list_emb_sb_final.iloc[train_index].to_numpy(), dtype=torch.float32)
-        problist_te = torch.tensor(prob_list_emb_sb_final.iloc[test_index].to_numpy(), dtype=torch.float32)
-        problist_val = torch.tensor(prob_list_emb_sb_final.iloc[valid_index].to_numpy(), dtype=torch.float32)
         problist_input_dim = len(prob_list_emb_sb_final.columns)
 
     if args.problistform == 'embedding_attention':
@@ -596,9 +517,6 @@ if 'problist' in modality_to_use:
         value_problist_embed = torch.tensor(prob_list_emb_sb1[col_names].astype('float').values, dtype=float)
         dense_problist_embedding = torch.sparse_coo_tensor(torch.transpose(index_problist_ids, 0, 1), value_problist_embed,
                                                       dtype=torch.float32)
-        problist_tr = torch.index_select(dense_problist_embedding, 0, torch.tensor(train_index)).coalesce()
-        problist_val = torch.index_select(dense_problist_embedding, 0, torch.tensor(valid_index)).coalesce()
-        problist_te = torch.index_select(dense_problist_embedding, 0, torch.tensor(test_index)).coalesce()
         problist_input_dim = len(col_names)
 
 
@@ -637,18 +555,14 @@ if 'flow' in modality_to_use:
     other_intra_flow_wlabs['person_integer'] = other_intra_flow_wlabs['person_integer'].astype('int')
     very_dense_flow['person_integer'] = very_dense_flow['person_integer'].astype('int')
 
-    index_med_other_flow = torch.tensor(other_intra_flow_wlabs[['person_integer', 'timepoint', 'measure_index']].values,
-                                        dtype=int)
+    index_med_other_flow = torch.tensor(other_intra_flow_wlabs[['person_integer', 'timepoint', 'measure_index']].values, dtype=int)
     value_med_other_flow = torch.tensor(other_intra_flow_wlabs['VALUE'].values)
     flowsheet_other_flow = torch.sparse_coo_tensor(torch.transpose(index_med_other_flow, 0, 1),
                                                    value_med_other_flow, dtype=torch.float32)
 
-    index_med_very_dense = torch.tensor(very_dense_flow[['person_integer', 'timepoint', 'measure_index']].values,
-                                        dtype=int)
+    index_med_very_dense = torch.tensor(very_dense_flow[['person_integer', 'timepoint', 'measure_index']].values,dtype=int)
     value_med_very_dense = torch.tensor(very_dense_flow['VALUE'].values)
-    flowsheet_very_dense_sparse_form = torch.sparse_coo_tensor(torch.transpose(index_med_very_dense, 0, 1),
-                                                               value_med_very_dense,
-                                                               dtype=torch.float32)  ## this is memory heavy and could be skipped, only because it is making a copy not really because it is harder to store
+    flowsheet_very_dense_sparse_form = torch.sparse_coo_tensor(torch.transpose(index_med_very_dense, 0, 1), value_med_very_dense, dtype=torch.float32)  ## this is memory heavy and could be skipped, only because it is making a copy not really because it is harder to store
     flowsheet_very_dense = flowsheet_very_dense_sparse_form.to_dense()
     flowsheet_very_dense = torch.cumsum(flowsheet_very_dense, dim=1)
 
@@ -657,30 +571,12 @@ if 'flow' in modality_to_use:
     total_flowsheet_measures = other_intra_flow_wlabs['measure_index'].unique().max() + 1 + very_dense_flow[
         'measure_index'].unique().max() + 1  # plus 1 because of the python indexing from 0
 
-    if (args.includeMissingnessMasks):
-        """  Masks very dense flowsheet seperation based on train test; will double the dimension of flowsheet """
-
-        # mask for very dense
-        mask_flowsheet_very_dense = torch.sparse_coo_tensor(flowsheet_very_dense_sparse_form._indices(),
-                                                            np.ones(len(flowsheet_very_dense_sparse_form._values())),
-                                                            flowsheet_very_dense_sparse_form.size()).to_dense()
-
-        total_flowsheet_measures = 2 * total_flowsheet_measures
-        if args.task == 'endofcase':
-            very_dense_tr_mask = torch.vstack([mask_flowsheet_very_dense[train_index, :, :]] * 2)
-            very_dense_te_mask = torch.vstack([mask_flowsheet_very_dense[test_index, :, :]] * 2)
-        else:
-            very_dense_tr_mask = mask_flowsheet_very_dense[train_index, :, :]
-            very_dense_te_mask = mask_flowsheet_very_dense[test_index, :, :]
-
-
     config['preops_init_flow'] = args.preopInitLstmFlow
     config['lstm_flow_hid'] = args.lstmFlowWidth
     config['lstm_flow_num_layers'] = args.lstmFlowDepth
     config['bilstm_flow'] = args.BilstmFlow
     config['p_flow'] = args.lstmFlowDrop
     config['weight_decay_LSTMflowL2'] = args.lstmFlowL2
-    config['num_flowsheet_feat'] = total_flowsheet_measures
 
 if 'meds' in modality_to_use:
     # reading the med files
@@ -797,365 +693,604 @@ if 'meds' in modality_to_use:
     config['group_start_list'] = group_start
     config['group_end_list'] = group_end
 
-outcome_df.drop(["orlogid_encoded"], axis=1, inplace=True)
-outcome_df.reset_index(inplace=True)
-outcome_df.rename({"index": "person_integer"}, axis=1, inplace=True)
+# outcome_df.drop(["orlogid_encoded"], axis=1, inplace=True)
+# outcome_df.reset_index(inplace=True)
+# outcome_df.rename({"index": "person_integer"}, axis=1, inplace=True)
 
 print("Passed all the data processing stage")
-
-if args.task == 'endofcase':  ##I only included the first two timepoints; doing the rest requires either excluding cases so that all 4 are defined or more complex indexing
-    data_tr = [torch.hstack([torch.tensor(preops_tr.to_numpy(), dtype=torch.float32),
-                      torch.tensor(endtimes.iloc[train_index]["true_test"].values,
-                                   dtype=int).reshape(len(preops_tr), 1)]),
-               torch.tensor(endtimes.iloc[train_index]["true_test"].values, dtype=int),
-               torch.tensor(bow_input.iloc[train_index].to_numpy(), dtype=torch.float32),
-               hm_tr,
-               torch.index_select(dense_med_ids, 0, torch.tensor(train_index)).coalesce(),
-               torch.index_select(dense_med_dose, 0, torch.tensor(train_index)).coalesce(),
-               torch.index_select(dense_med_units, 0, torch.tensor(train_index)).coalesce(),
-               flowsheet_very_dense[train_index, :, :],
-               torch.index_select(flowsheet_other_flow, 0, torch.tensor(train_index)).coalesce(),
-               torch.tensor(endtimes.iloc[train_index]["t1"].values, dtype=int)
-               ]
-    data_te = [torch.hstack([torch.tensor(preops_te.to_numpy(), dtype=torch.float32),
-                      torch.tensor(endtimes.iloc[test_index]["true_test"].values,
-                                   dtype=int).reshape(len(preops_te), 1)]),
-               torch.tensor(endtimes.iloc[test_index]["true_test"].values, dtype=int),
-               torch.tensor(bow_input.iloc[test_index].to_numpy(), dtype=torch.float32),
-               hm_te,
-               torch.index_select(dense_med_ids, 0, torch.tensor(test_index)).coalesce(),
-               torch.index_select(dense_med_dose, 0, torch.tensor(test_index)).coalesce(),
-               torch.index_select(dense_med_units, 0, torch.tensor(test_index)).coalesce(),
-               flowsheet_very_dense[test_index, :, :],
-               torch.index_select(flowsheet_other_flow, 0, torch.tensor(test_index)).coalesce(),
-               torch.tensor(endtimes.iloc[test_index]["t1"].values, dtype=int)
-               ]
-    data_va = [torch.hstack([torch.tensor(preops_val.to_numpy(), dtype=torch.float32),
-                      torch.tensor(endtimes.iloc[valid_index]["true_test"].values,
-                                   dtype=int).reshape(len(preops_val), 1)]),
-               torch.tensor(endtimes.iloc[valid_index]["true_test"].values, dtype=int),
-               torch.tensor(bow_input.iloc[valid_index].to_numpy(), dtype=torch.float32),
-               hm_val,
-               torch.index_select(dense_med_ids, 0, torch.tensor(valid_index)).coalesce(),
-               torch.index_select(dense_med_dose, 0, torch.tensor(valid_index)).coalesce(),
-               torch.index_select(dense_med_units, 0, torch.tensor(valid_index)).coalesce(),
-               flowsheet_very_dense[valid_index, :, :],
-               torch.index_select(flowsheet_other_flow, 0, torch.tensor(valid_index)).coalesce(),
-               torch.tensor(endtimes.iloc[valid_index]["t1"].values, dtype=int)
-               ]
-else:
-    data_tr= {}
-    data_tr['outcomes'] = torch.tensor(outcome_df.iloc[train_index]["outcome"].values)
-    data_tr['endtimes'] = torch.tensor(endtimes.iloc[train_index]["endtime"].values, dtype=int)
-    data_val= {}
-    data_val['outcomes'] = torch.tensor(outcome_df.iloc[valid_index]["outcome"].values)
-    data_val['endtimes'] = torch.tensor(endtimes.iloc[valid_index]["endtime"].values, dtype=int)
-    data_te= {}
-    data_te['outcomes'] = torch.tensor(outcome_df.iloc[test_index]["outcome"].values)
-    data_te['endtimes'] = torch.tensor(endtimes.iloc[test_index]["endtime"].values, dtype=int)
-
-    if 'preops' in modality_to_use:
-        data_tr['preops'] = torch.tensor(preops_tr.to_numpy(), dtype=torch.float32)
-        data_tr['cbow'] = torch.tensor(bow_input.iloc[train_index].to_numpy(), dtype=torch.float32)
-        data_val['preops'] = torch.tensor(preops_val.to_numpy(), dtype=torch.float32)
-        data_val['cbow'] = torch.tensor(bow_input.iloc[valid_index].to_numpy(), dtype=torch.float32)
-        data_te['preops'] = torch.tensor(preops_te.to_numpy(), dtype=torch.float32)
-        data_te['cbow'] = torch.tensor(bow_input.iloc[test_index].to_numpy(), dtype=torch.float32)
-
-    if 'homemeds' in modality_to_use:
-        data_tr['homemeds'] = hm_tr
-        data_val['homemeds'] = hm_val
-        data_te['homemeds'] =hm_te
-
-    if 'pmh' in modality_to_use:
-        data_tr['pmh'] = pmh_tr
-        data_val['pmh'] = pmh_val
-        data_te['pmh'] =pmh_te
-
-    if 'problist' in modality_to_use:
-        data_tr['problist'] = problist_tr
-        data_val['problist'] = problist_val
-        data_te['problist'] =problist_te
-
-    if 'flow' in modality_to_use:
-        data_tr['flow'] = [flowsheet_very_dense[train_index, :, :],
-                           torch.index_select(flowsheet_other_flow, 0, torch.tensor(train_index)).coalesce()]
-        data_val['flow'] = [flowsheet_very_dense[valid_index, :, :],
-                           torch.index_select(flowsheet_other_flow, 0, torch.tensor(valid_index)).coalesce()]
-        data_te['flow'] = [flowsheet_very_dense[test_index, :, :],
-                           torch.index_select(flowsheet_other_flow, 0, torch.tensor(test_index)).coalesce()]
-
-    if 'meds' in modality_to_use:
-        data_tr['meds'] = [torch.index_select(dense_med_ids, 0, torch.tensor(train_index)).coalesce(),
-                           torch.index_select(dense_med_dose, 0, torch.tensor(train_index)).coalesce(),
-                           torch.index_select(dense_med_units, 0, torch.tensor(train_index)).coalesce()]
-        data_val['meds'] = [torch.index_select(dense_med_ids, 0, torch.tensor(valid_index)).coalesce(),
-                           torch.index_select(dense_med_dose, 0, torch.tensor(valid_index)).coalesce(),
-                           torch.index_select(dense_med_units, 0, torch.tensor(valid_index)).coalesce()]
-        data_te['meds'] = [torch.index_select(dense_med_ids, 0, torch.tensor(test_index)).coalesce(),
-                           torch.index_select(dense_med_dose, 0, torch.tensor(test_index)).coalesce(),
-                           torch.index_select(dense_med_units, 0, torch.tensor(test_index)).coalesce()]
 
 config['modality_used'] = modality_to_use
 device = torch.device('cuda')
 
-if args.modelType == 'transformer':
-    config['e_dim_flow'] = args.e_dim_flow
-    config['AttTS_Heads'] = args.AttTSHeads
-    config['cnn_before_Att'] = args.cnn_before_Att
-    config['kernel_size_conv'] = args.kernel_size_conv
-    config['stride_conv'] = args.stride_conv
-    config['ats_dropout'] = args.ats_dropout
 
-    model = preop_flow_med_bow_model.TS_Transformer_Med_index(**config).to(device)
-else:
-    # if True:
-    #     best_trial_file_name = '/home/trips/PeriOperative_RiskPrediction/HP_output/Best_trial_resulticu_lstm_modal__preops_cbow_202.txt'
-    #     with open(best_trial_file_name, 'r') as f: dict = f.readlines()
-    #
-    # breakpoint()
-    model = preop_flow_med_bow_model.TS_lstm_Med_index(**config).to(device)
+# this is to add to the dir_name
+modalities_to_add = '_modal'
 
-optimizer = optim.Adam(model.parameters(), lr=args.learningRate, weight_decay=1e-5)
+for i in range(len(modality_to_use)):
+    modalities_to_add = modalities_to_add + "_" + modality_to_use[i]
 
-# lr scheduler
-scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=args.LRPatience, verbose=True, factor=args.learningRateFactor)
+best_5_random_number = []  # this will take the args when directly run otherwise it will read the number from the file namee
+if eval(args.bestModel) == True:
+    path_to_dir = '/home/trips/PeriOperative_RiskPrediction/HP_output/'
+    sav_dir = '/home/trips/PeriOperative_RiskPrediction/Best_results/Intraoperative/'
 
-# initializing the loss function
-if not binary_outcome:
-    # criterion = torch.nn.MSELoss()
-    criterion = torch.nn.L1Loss()
-else:
-  criterion = torch.nn.BCELoss()
+    # this is to be used when running the best setting results on RIS
+    # path_to_dir = output_dir + 'HP_output/'
+    # sav_dir = output_dir + 'Best_results/Intraoperative/'
 
-total_train_loss = []
-total_test_loss = []
+    # Best_trial_resulticu_transformer_modal__preops_cbow_pmh_problist_homemeds_flow_meds_424_24-07-16-16:13:30.json
+    file_names = os.listdir(path_to_dir)
+    best_5_names = []
 
-model_cachename = hashlib.md5(json.dumps(vars(args)).encode())
+    best_5_initial_name = 'Best_trial_result' +args.task+"_" + str(args.modelType)+ "_modal_"
 
-PATH = "model_" + args.task + "_" + str(model_cachename.hexdigest()) + ".pth"
-
-updating_lr = args.learningRate
-best_metric = 1000 # some large number
-lr_schedular_epoch_dict = {}
-lr_schedular_epoch_dict[0] = updating_lr
-
-for epoch in range(args.epochs):
-  loss_tr = 0
-  loss_tr_cls = 0
-  model.train()
-  ## the default __getitem__ is like 2 orders of magnitude slower
-  shuffle_index = torch.randperm(n=data_tr['outcomes'].shape[0])
-  if (args.overSampling == True) and (args.task != 'endofcase'):
-      pos_idx = (data_tr['outcomes'] == 1).nonzero()
-      neg_idx = (data_tr['outcomes'] == 0).nonzero()
-      if args.batchSize % 2 == 0:  # this is done because it was creating a problem when the batchsize was an odd number
-          nbatch = neg_idx.shape[0] // int(args.batchSize / 2)
-      else:
-          nbatch = neg_idx.shape[0] // math.ceil(args.batchSize / 2)
-  else:
-      nbatch = data_tr['outcomes'].shape[0] // args.batchSize
-  for i in range(nbatch):
-      if (overSampling == True) and (args.task != 'endofcase'):
-          if args.batchSize % 2 == 0:
-              neg_indexbatch = neg_idx[range(i * int(args.batchSize / 2), (i + 1) * int(args.batchSize / 2))]
-          else:
-              neg_indexbatch = neg_idx[range(i * math.ceil(args.batchSize / 2), (i + 1) * math.ceil(args.batchSize / 2))]
-          p = torch.from_numpy(np.repeat([1 / len(pos_idx)], len(pos_idx)))
-          pos_indexbatch = pos_idx[p.multinomial(num_samples=int(args.batchSize / 2),
-                                                 replacement=True)]  # this is sort of an equivalent of numpy.random.choice
-          these_index = torch.vstack([neg_indexbatch, pos_indexbatch]).reshape([args.batchSize])
-      else:
-          these_index = shuffle_index[range(i * args.batchSize, (i + 1) * args.batchSize)]
-
-      ## this collate method is pretty inefficent for this task but works with the generic DataLoader method
+    modal_name = 'DataModal'
+    for i in range(len(modality_to_use)):
+        if (modality_to_use[i] != 'cbow'):
+            modal_name = modal_name + "_" + modality_to_use[i]
+        best_5_initial_name = best_5_initial_name + "_" + modality_to_use[i]
 
 
-      local_data={}
-      for k in data_tr.keys():
-          if type(data_tr[k]) != list:
-              local_data[k] = torch.index_select(data_tr[k],  0 ,  these_index )
-          else:
-              local_data[k] = [torch.index_select(x,  0 ,  these_index )  for x in data_tr[k]]
+    dir_name = sav_dir + args.modelType + '/' + modal_name + "_" + str(args.task) + "/"
 
-      if args.task == 'endofcase':
-          local_data[1] = torch.hstack([local_data[1][:int(len(these_index) / 2)], local_data[-1][int(
-              len(these_index) / 2):]])  # using hstack because vstack leads to two seperate tensors
-          local_data[0][:, -1] = local_data[
-              1]  # this is being done because the last column has the current times which will be t1 timepoint for the second half of the batch
-          local_data[-1] = torch.from_numpy(np.repeat([1, 0], [int(args.batchSize / 2), args.batchSize - int(args.batchSize / 2)]))
-      if (args.includeMissingnessMasks):  # appending the missingness masks in training data
-          if 'preops' in modality_to_use:
-              local_data['preops'] =[local_data['preops'], torch.tensor(preops_tr_mask.iloc[these_index].to_numpy(), dtype=torch.float32)]
-          if 'flow' in modality_to_use:
-              local_data['flow'].append(very_dense_tr_mask[these_index, :, :])
-              sparse_mask = torch.sparse_coo_tensor(local_data['flow'][1]._indices(), np.ones(len(local_data['flow'][1]._values())), local_data['flow'][1].size())
-              local_data['flow'].append(sparse_mask)
-
-      data_train, mod_order_dict = preop_flow_med_bow_model.collate_time_series(local_data, device)
-
-      # reset the gradients back to zero as PyTorch accumulates gradients on subsequent backward passes
-      optimizer.zero_grad()
-
-      y_pred, reg_loss = model(data_train[0])
-      cls_loss_tr = criterion(y_pred.squeeze(-1), data_train[1].float().to(device)).float()
-      train_loss = cls_loss_tr + reg_loss
-      train_loss.backward()
-      optimizer.step()
-      loss_tr += train_loss.item()
-      loss_tr_cls += cls_loss_tr.item()
-  loss_tr = loss_tr / data_tr['outcomes'].shape[0]
-  loss_tr_cls = loss_tr_cls/ data_tr['outcomes'].shape[0]
-
-  loss_te = 0
-  loss_te_cls = 0
-  with torch.no_grad():
-    model.eval()
-    true_y_test = []
-    pred_y_test = []
-    nbatch = data_te['outcomes'].shape[0] // args.batchSize
-    for i in range(nbatch):
-        these_index = torch.tensor(list(range(i * args.batchSize, (i + 1) * args.batchSize)), dtype=int)
-        local_data = {}
-        for k in data_te.keys():
-            if type(data_te[k]) != list:
-                local_data[k] = torch.index_select(data_te[k], 0, these_index)
-            else:
-                local_data[k] = [torch.index_select(x, 0, these_index) for x in data_te[k]]
-
-        if args.task == 'endofcase':
-            local_data[1] = torch.hstack([local_data[1][:int(len(these_index) / 2)], local_data[-1][int(
-                len(these_index) / 2):]])  # using hstack because vstack leads to two seperate tensors
-            local_data[0][:, -1] = local_data[
-                1]  # this is being done because the last column has the current times which will be t1 timepoint for the second half of the batch
-            local_data[-1] = torch.from_numpy(np.repeat([1, 0], [int(batchSize / 2), batchSize - int(batchSize / 2)]))
-        if (args.includeMissingnessMasks):  # appending the missingness masks in test data
-
-            if 'preops' in modality_to_use:
-                local_data['preops'] = [local_data['preops'],
-                                        torch.tensor(preops_te_mask.iloc[these_index].to_numpy(), dtype=torch.float32)]
-            if 'flow' in modality_to_use:
-                local_data['flow'].append(very_dense_te_mask[these_index, :, :])
-                sparse_mask = torch.sparse_coo_tensor(local_data['flow'][1]._indices(),
-                                                      np.ones(len(local_data['flow'][1]._values())),
-                                                      local_data['flow'][1].size())
-                local_data['flow'].append(sparse_mask)
-
-        data_valid, mod_order_dict = preop_flow_med_bow_model.collate_time_series(local_data, device)
-
-        y_pred, reg_loss = model(data_valid[0])
-        cls_loss_te = criterion(y_pred.squeeze(-1),data_valid[1].float().to(device)).float()
-        test_loss = cls_loss_te + reg_loss
-        loss_te += test_loss.item()
-        loss_te_cls += cls_loss_te.item()
-
-        # values from the last epoch; it will get overwritten
-        # using test data only instead of validation data for evaluation currently because the validation will be done on a seperate data
-        true_y_test.append(data_valid[1].float().detach().numpy())
-        pred_y_test.append(y_pred.squeeze(-1).cpu().detach().numpy())
-
-    loss_te = loss_te / data_te['outcomes'].shape[0]
-    loss_te_cls = loss_te_cls/ data_te['outcomes'].shape[0]
-
-    if best_metric > loss_te_cls:
-        best_metric = loss_te_cls
-        # torch.save(model.state_dict(), PATH)
-        pred_y_test_best = pred_y_test
-
-    # display the epoch training and test loss
-    print("epoch : {}/{}, training loss = {:.8f}, validation loss = {:.8f}".format(epoch + 1, args.epochs, loss_tr_cls,loss_te_cls) )
-    total_train_loss.append(loss_tr)
-    total_test_loss.append(loss_te)
-
-  scheduler.step(loss_te_cls)
-
-  if optimizer.param_groups[0]['lr'] != updating_lr:
-      updating_lr = optimizer.param_groups[0]['lr']
-      lr_schedular_epoch_dict[epoch] = updating_lr
-
-  # print("current lr ", optimizer.param_groups[0]['lr'])
-  # 1e-8 is obtained by multiplying 1e-3 by (0.25)^5 so to make it general we can have initial_learning_rate * (learningRateFactor)^5
-  if optimizer.param_groups[0]['lr'] <= args.learningRate * np.power(args.learningRateFactor, 5):  # hardcoding for now because our schedule is such that 10**-3 * (1, 1/4, 1/16, 1/64, 1/256, 1/1024, 0) with an initial rate of 10**-3 an learning rate factor of 0.25
-      print("inside the early stopping loop")
-      print("best validation loss ", best_metric)
-      # epoch =epochs
-      # true_y_test.append(data_valid[1].float().detach().numpy())
-      # pred_y_test.append(y_pred.squeeze(-1).cpu().detach().numpy())
-      break
-
-# breakpoint()
-model.eval()
-
-true_y_test = np.concatenate(true_y_test)
-pred_y_test = np.concatenate(pred_y_test_best)
-if not binary_outcome:
-    print(" Number of epochs that ran ", epoch)
-    plt.scatter(np.array(true_y_test),np.array(pred_y_test))
-    plt.title("True outcome value vs predictions on test set ")
-    plt.xlabel(" True " + str(args.task))
-    plt.ylabel(" Predicted " + str(args.task))
-    plt.savefig("/output/True_vs_Pred_"+str(args.task)+ ".png")
-    plt.close()
-    corr_value = np.round(np.corrcoef(np.array(true_y_test), np.array(pred_y_test))[1, 0], 3)
-    print(str(args.task) + " prediction with correlation ", corr_value)
-    r2value = r2_score(np.array(true_y_test), np.array(pred_y_test))
-    temp_df = pd.DataFrame(columns=['true_value', 'pred_value'])
-    temp_df['true_value'] = np.array(true_y_test)
-    temp_df['pred_value'] = np.array(pred_y_test)
-    temp_df['abs_diff'] = abs(temp_df['true_value'] - temp_df['pred_value'])
-    mae_full = np.round(temp_df['abs_diff'].mean(), 3)
-    print("MAE on the test set ", mae_full)
-    q25, q7, q9 = temp_df['true_value'].quantile([0.25, 0.7, 0.9])
-
-    firstP_data = temp_df.query('true_value<={high}'.format(high=q25))
-    secondP_data = temp_df.query('{low}<true_value<={high}'.format(low=q25, high=q7))
-    thirdP_data = temp_df.query('{low}<true_value<={high}'.format(low=q7, high=q9))
-    fourthP_data = temp_df.query('{low}<true_value'.format(low=q9))
-
-    mae_dict = {'<' + str(np.round(q25, decimals=1)): firstP_data['abs_diff'].mean(),
-                str(np.round(q25, decimals=1)) + "<" + str(np.round(q7, decimals=1)): secondP_data['abs_diff'].mean(),
-                str(np.round(q7, decimals=1)) + "<" + str(np.round(q9, decimals=1)): thirdP_data['abs_diff'].mean(),
-                str(np.round(q9, decimals=1)) + "<": fourthP_data['abs_diff'].mean()}
-
-    stratifying_point_dict = {'<' + str(np.round(q25, decimals=1)): '<' + str(np.round(q25, decimals=1)),
-                              str(np.round(q25, decimals=1)) + "<" + str(np.round(q7, decimals=1)): str(
-                                  np.round(q25, decimals=1)) + "<" + str(np.round(q7, decimals=1)),
-                              str(np.round(q7, decimals=1)) + "<" + str(np.round(q9, decimals=1)): str(
-                                  np.round(q7, decimals=1)) + "<" + str(np.round(q9, decimals=1)),
-                              str(np.round(q9, decimals=1)) + "<": str(np.round(q9, decimals=1)) + "<"}
-
-    end_time = datetime.now()  # only writing part is remaining in the code to time
-    timetaken = end_time-start_time
-
-    csvdata = {
-        'hp': json.dumps(vars(args)),
-        'Initial_seed': randomSeed,  # this is being done so its easier to differentiate each line in the final csv file
-        'corr': corr_value,
-        'R2': r2value,
-        'MAE': mae_full,
-        'Stratifying_points': stratifying_point_dict,
-        'Stratified_MAE': mae_dict,
-        'git': args.git,
-        'name': args.nameinfo,
-        'target': args.task,
-        'evaltime': datetime.now().strftime("%y-%m-%d-%H:%M:%S"),
-        'lr_change_epoch': json.dumps(lr_schedular_epoch_dict),
-        'time': timetaken
-    }
-
-    csvdata = pd.DataFrame(csvdata)
-    outputcsv = os.path.join('/output/', args.outputcsv)
-    if (os.path.exists(outputcsv)):
-        csvdata.to_csv(outputcsv, mode='a', header=False, index=False)
+    for file_name in file_names:
+        if (best_5_initial_name in file_name) and (file_name.split("_")[-3] in modality_to_use):
+            print(file_name)
+            best_5_names.append(file_name)
+            best_5_random_number.append(int(file_name.split("_")[-2]))
+    if not os.path.exists(dir_name):
+        os.makedirs(dir_name)
     else:
-        csvdata.to_csv(outputcsv, header=True, index=False)
+        print(f"The directory '{dir_name}' already exists.")
 
-    ## TODO: output saving to csv for non-binary
+    best_metadata_dict = {}
 else:
+    best_5_random_number.append(args.randomSeed)
+    config['p_final'] =args.finalDrop
+    config['finalBN'] =args.finalBN
+    # this is being added apriori because we are projecting the final representation to this dimension
+    config['hidden_units_final'] =args.preopsWidthFinal
+    config['weightInt'] =args.XavOrthWeightInt
+
+perf_metric = np.zeros((len(best_5_random_number), 2))  # 2 is for the metrics auroc and auprc
+# breakpoint()
+for runNum in range(len(best_5_random_number)):
+    # starting time of the run
+    start_time = datetime.now()
+
+    torch.manual_seed(int(best_5_random_number[runNum]))
+    torch.cuda.manual_seed(int(best_5_random_number[runNum]))
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    np.random.seed(int(best_5_random_number[runNum]))
+
+    if eval(args.bestModel) ==True:
+        best_file_name = path_to_dir + best_5_names[runNum]
+        md_f = open(best_file_name)
+        md = json.load(md_f)
+        param_values = md['params']
+
+        config['p_final'] = param_values['p_final']
+        config['finalBN'] = param_values['finalBN']
+        # this is being added apriori because we are projecting the final representation to this dimension
+        config['hidden_units_final'] = param_values['hidden_units_final']
+        config['weightInt'] = param_values['weightInt']
+        best_dict_local = {}
+
+    if 'preops' not in modality_to_use:
+        test_size = 0.2
+        valid_size = 0.00005  # change back to 0.00005 for the full dataset
+        y_outcome = outcome_df["outcome"].values
+        preops.reset_index(drop=True, inplace=True)
+        upto_test_idx = int(test_size * len(preops))
+        test = preops.iloc[:upto_test_idx]
+        train0 = preops.iloc[upto_test_idx:]
+        if (binary_outcome == True) and (y_outcome.dtype != 'float64'):
+            train, valid = train_test_split(train0, test_size=valid_size / (1. - test_size),
+                                            random_state=int(best_5_random_number[runNum]),
+                                            stratify=y_outcome[train0.index])
+        else:
+            train, valid = train_test_split(train0, test_size=valid_size / (1. - test_size),
+                                            random_state=int(best_5_random_number[runNum]))
+
+        train_index = train.index
+        valid_index = valid.index
+        test_index = test.index
+
+        if args.task == 'icu':  # this part is basically dropping the planned icu cases from the evaluation set
+            test_index = preops.iloc[test_index][preops.iloc[test_index]['plannedDispo'] != 'ICU'][
+                'plannedDispo'].index
+
+    if 'preops' in modality_to_use:
+        # currently sacrificing 5 data points in the valid set and using the test set to finally compute the auroc etc
+        preops_tr, preops_val, preops_te, train_index, valid_index, test_index, preops_mask = pps.preprocess_train(
+            preops,
+            args.task,
+            y_outcome=
+            outcome_df[
+                "outcome"].values,
+            binary_outcome=binary_outcome,
+            valid_size=0.00005, random_state=int(best_5_random_number[runNum]), input_dr=data_dir,
+            output_dr=out_dir)  # change back to 0.00005
+
+        if args.task == 'icu':  # this part is basically dropping the planned icu cases from the evaluation set (value of plannedDispo are numeric after processing; the df has also been changed )
+            test_index = preops.iloc[test_index][preops.iloc[test_index]['plannedDispo'] != 3]['plannedDispo'].index
+            preops_te = preops_te.iloc[test_index]
+
+        preop_mask_counter = 0
+        num_preop_features = len(preops_tr.columns)
+
+        if (args.includeMissingnessMasks):
+            """  Masks for preops based on train test"""
+            if args.task == 'endofcase':
+                preops_tr_mask = pd.concat([preops_mask.iloc[train_index], preops_mask.iloc[train_index]])
+                preops_te_mask = pd.concat([preops_mask.iloc[test_index], preops_mask.iloc[test_index]])
+            else:
+                preops_tr_mask = preops_mask.iloc[train_index]
+                preops_te_mask = preops_mask.iloc[test_index]
+            preop_mask_counter = 1
+
+        config['input_shape'] = num_preop_features + preop_mask_counter * num_preop_features,  # this is done so that I dont have to write a seperate condition for endofcase where the current time is being appended to preops
+        config['input_shape_bow'] = len(bow_input.columns)
+
+
+        if eval(args.bestModel) == True:
+            config['hidden_units'] = param_values['hidden_units']
+            config['hidden_depth'] = param_values['hidden_depth']
+            config['weight_decay_preopsL2'] = param_values['weight_decay_preopsL2']
+            config['weight_decay_preopsL1'] = param_values['weight_decay_preopsL1']
+
+            config['hidden_units_bow'] = param_values['hidden_units_bow']
+            config['hidden_units_final_bow'] = param_values['hidden_units_final_bow']
+            config['hidden_depth_bow'] = param_values['hidden_depth_bow']
+            config['weight_decay_bowL2'] = param_values['weight_decay_bowL2']
+            config['weight_decay_bowL1'] = param_values['weight_decay_bowL1']
+
+    if 'homemeds' in modality_to_use:
+        if args.home_medsform == 'embedding_attention':
+            hm_tr = torch.index_select(dense_HM_embedding, 0, torch.tensor(train_index)).coalesce()
+            hm_val = torch.index_select(dense_HM_embedding, 0, torch.tensor(valid_index)).coalesce()
+            hm_te = torch.index_select(dense_HM_embedding, 0, torch.tensor(test_index)).coalesce()
+        else:
+            hm_tr = torch.tensor(home_meds_final.iloc[train_index].to_numpy(), dtype=torch.float32)
+            hm_te = torch.tensor(home_meds_final.iloc[test_index].to_numpy(), dtype=torch.float32)
+            hm_val = torch.tensor(home_meds_final.iloc[valid_index].to_numpy(), dtype=torch.float32)
+        if eval(args.bestModel) == True:
+            config['hidden_units_hm'] = param_values['hidden_units_hm']
+            config['hidden_units_final_hm'] = param_values['hidden_units_final_hm']
+            config['hidden_depth_hm'] = param_values['hidden_depth_hm']
+            config['weight_decay_hmL2'] = param_values['weight_decay_hmL2']
+            config['weight_decay_hmL1'] = param_values['weight_decay_hmL1']
+            if 'Att_HM_Agg' in param_values.keys():
+                config['Att_HM_Agg'] = param_values['Att_HM_Agg']
+                config['Att_HM_agg_Heads'] = param_values['Att_HM_agg_Heads']
+
+    if 'pmh' in modality_to_use:
+
+        if args.pmhform == 'embedding_sum':
+            pmh_tr = torch.tensor(pmh_emb_sb_final.iloc[train_index].to_numpy(), dtype=torch.float32)
+            pmh_te = torch.tensor(pmh_emb_sb_final.iloc[test_index].to_numpy(), dtype=torch.float32)
+            pmh_val = torch.tensor(pmh_emb_sb_final.iloc[valid_index].to_numpy(), dtype=torch.float32)
+
+
+        if args.pmhform == 'embedding_attention':
+            pmh_tr = torch.index_select(dense_pmh_embedding, 0, torch.tensor(train_index)).coalesce()
+            pmh_val = torch.index_select(dense_pmh_embedding, 0, torch.tensor(valid_index)).coalesce()
+            pmh_te = torch.index_select(dense_pmh_embedding, 0, torch.tensor(test_index)).coalesce()
+
+
+        if eval(args.bestModel) == True:
+            config['hidden_units_pmh'] = param_values['hidden_units_pmh']
+            config['hidden_units_final_pmh'] = param_values['hidden_units_final_pmh']
+            config['hidden_depth_pmh'] = param_values['hidden_depth_pmh']
+            config['weight_decay_pmhL2'] = param_values['weight_decay_pmhL2']
+            config['weight_decay_pmhL1'] = param_values['weight_decay_pmhL1']
+            if 'Att_pmh_Agg' in param_values.keys():
+                config['Att_pmh_Agg'] = param_values['Att_pmh_Agg']
+                config['AttPmhAgg_Heads'] = param_values['AttPmhAgg_Heads']
+
+    if 'problist' in modality_to_use:
+
+        if args.problistform == 'embedding_sum':
+            problist_tr = torch.tensor(prob_list_emb_sb_final.iloc[train_index].to_numpy(), dtype=torch.float32)
+            problist_te = torch.tensor(prob_list_emb_sb_final.iloc[test_index].to_numpy(), dtype=torch.float32)
+            problist_val = torch.tensor(prob_list_emb_sb_final.iloc[valid_index].to_numpy(), dtype=torch.float32)
+
+
+        if args.problistform == 'embedding_attention':
+            problist_tr = torch.index_select(dense_problist_embedding, 0, torch.tensor(train_index)).coalesce()
+            problist_val = torch.index_select(dense_problist_embedding, 0, torch.tensor(valid_index)).coalesce()
+            problist_te = torch.index_select(dense_problist_embedding, 0, torch.tensor(test_index)).coalesce()
+
+
+        if eval(args.bestModel) == True:
+            config['hidden_units_problist'] = param_values['hidden_units_problist']
+            config['hidden_units_final_problist'] = param_values['hidden_units_final_problist']
+            config['hidden_depth_problist'] = param_values['hidden_depth_problist']
+            config['weight_decay_problistL2'] = param_values['weight_decay_problistL2']
+            config['weight_decay_problistL1'] = param_values['weight_decay_problistL1']
+            if 'Att_problist_Agg' in param_values.keys():
+                config['Att_problist_Agg'] = param_values['Att_problist_Agg']
+
+    if 'flow' in modality_to_use:
+        if (args.includeMissingnessMasks):
+            """  Masks very dense flowsheet seperation based on train test; will double the dimension of flowsheet """
+
+            # mask for very dense
+            mask_flowsheet_very_dense = torch.sparse_coo_tensor(flowsheet_very_dense_sparse_form._indices(),
+                                                                np.ones(
+                                                                    len(flowsheet_very_dense_sparse_form._values())),
+                                                                flowsheet_very_dense_sparse_form.size()).to_dense()
+
+            total_flowsheet_measures = 2 * total_flowsheet_measures
+            if args.task == 'endofcase':
+                very_dense_tr_mask = torch.vstack([mask_flowsheet_very_dense[train_index, :, :]] * 2)
+                very_dense_te_mask = torch.vstack([mask_flowsheet_very_dense[test_index, :, :]] * 2)
+            else:
+                very_dense_tr_mask = mask_flowsheet_very_dense[train_index, :, :]
+                very_dense_te_mask = mask_flowsheet_very_dense[test_index, :, :]
+
+        if eval(args.bestModel) == True:
+            config['preops_init_flow'] = param_values['preops_init_flow']
+            config['lstm_flow_hid'] = param_values['lstm_flow_hid']
+            config['lstm_flow_num_layers'] = param_values['lstm_flow_num_layers']
+            config['bilstm_flow'] = param_values['bilstm_flow']
+            config['p_flow'] = param_values['p_flow']
+            config['weight_decay_LSTMflowL2'] = param_values['weight_decay_LSTMflowL2']
+        config['num_flowsheet_feat'] = total_flowsheet_measures
+
+    if 'meds' in modality_to_use:
+        if eval(args.bestModel) == True:
+            config['e_dim_med_ids'] = param_values['e_dim_med_ids']
+            config['preops_init_med'] = param_values['preops_init_med']
+            config['lstm_hid'] = param_values['lstm_hid']
+            config['lstm_num_layers'] = param_values['lstm_num_layers']
+            config['bilstm_med'] = param_values['bilstm_med']
+            if 'Att_problist_Agg' in param_values.keys():
+                config['Att_MedAgg'] = param_values['Att_MedAgg']
+                config['AttMedAgg_Heads'] = param_values['AttMedAgg_Heads']
+            config['p_time'] = param_values['p_time']
+            config['p_rows'] = param_values['p_rows']
+            config['weight_decay_LSTMmedL2'] = param_values['weight_decay_LSTMmedL2']
+
+    if args.task == 'endofcase':  ##I only included the first two timepoints; doing the rest requires either excluding cases so that all 4 are defined or more complex indexing
+        data_tr = [torch.hstack([torch.tensor(preops_tr.to_numpy(), dtype=torch.float32),
+                                 torch.tensor(endtimes.iloc[train_index]["true_test"].values,
+                                              dtype=int).reshape(len(preops_tr), 1)]),
+                   torch.tensor(endtimes.iloc[train_index]["true_test"].values, dtype=int),
+                   torch.tensor(bow_input.iloc[train_index].to_numpy(), dtype=torch.float32),
+                   hm_tr,
+                   torch.index_select(dense_med_ids, 0, torch.tensor(train_index)).coalesce(),
+                   torch.index_select(dense_med_dose, 0, torch.tensor(train_index)).coalesce(),
+                   torch.index_select(dense_med_units, 0, torch.tensor(train_index)).coalesce(),
+                   flowsheet_very_dense[train_index, :, :],
+                   torch.index_select(flowsheet_other_flow, 0, torch.tensor(train_index)).coalesce(),
+                   torch.tensor(endtimes.iloc[train_index]["t1"].values, dtype=int)
+                   ]
+        data_te = [torch.hstack([torch.tensor(preops_te.to_numpy(), dtype=torch.float32),
+                                 torch.tensor(endtimes.iloc[test_index]["true_test"].values,
+                                              dtype=int).reshape(len(preops_te), 1)]),
+                   torch.tensor(endtimes.iloc[test_index]["true_test"].values, dtype=int),
+                   torch.tensor(bow_input.iloc[test_index].to_numpy(), dtype=torch.float32),
+                   hm_te,
+                   torch.index_select(dense_med_ids, 0, torch.tensor(test_index)).coalesce(),
+                   torch.index_select(dense_med_dose, 0, torch.tensor(test_index)).coalesce(),
+                   torch.index_select(dense_med_units, 0, torch.tensor(test_index)).coalesce(),
+                   flowsheet_very_dense[test_index, :, :],
+                   torch.index_select(flowsheet_other_flow, 0, torch.tensor(test_index)).coalesce(),
+                   torch.tensor(endtimes.iloc[test_index]["t1"].values, dtype=int)
+                   ]
+        data_va = [torch.hstack([torch.tensor(preops_val.to_numpy(), dtype=torch.float32),
+                                 torch.tensor(endtimes.iloc[valid_index]["true_test"].values,
+                                              dtype=int).reshape(len(preops_val), 1)]),
+                   torch.tensor(endtimes.iloc[valid_index]["true_test"].values, dtype=int),
+                   torch.tensor(bow_input.iloc[valid_index].to_numpy(), dtype=torch.float32),
+                   hm_val,
+                   torch.index_select(dense_med_ids, 0, torch.tensor(valid_index)).coalesce(),
+                   torch.index_select(dense_med_dose, 0, torch.tensor(valid_index)).coalesce(),
+                   torch.index_select(dense_med_units, 0, torch.tensor(valid_index)).coalesce(),
+                   flowsheet_very_dense[valid_index, :, :],
+                   torch.index_select(flowsheet_other_flow, 0, torch.tensor(valid_index)).coalesce(),
+                   torch.tensor(endtimes.iloc[valid_index]["t1"].values, dtype=int)
+                   ]
+    else:
+        data_tr = {}
+        data_tr['outcomes'] = torch.tensor(outcome_df.iloc[train_index]["outcome"].values)
+        data_tr['endtimes'] = torch.tensor(endtimes.iloc[train_index]["endtime"].values, dtype=int)
+        data_val = {}
+        data_val['outcomes'] = torch.tensor(outcome_df.iloc[valid_index]["outcome"].values)
+        data_val['endtimes'] = torch.tensor(endtimes.iloc[valid_index]["endtime"].values, dtype=int)
+        data_te = {}
+        data_te['outcomes'] = torch.tensor(outcome_df.iloc[test_index]["outcome"].values)
+        data_te['endtimes'] = torch.tensor(endtimes.iloc[test_index]["endtime"].values, dtype=int)
+
+        if 'preops' in modality_to_use:
+            data_tr['preops'] = torch.tensor(preops_tr.to_numpy(), dtype=torch.float32)
+            data_tr['cbow'] = torch.tensor(bow_input.iloc[train_index].to_numpy(), dtype=torch.float32)
+            data_val['preops'] = torch.tensor(preops_val.to_numpy(), dtype=torch.float32)
+            data_val['cbow'] = torch.tensor(bow_input.iloc[valid_index].to_numpy(), dtype=torch.float32)
+            data_te['preops'] = torch.tensor(preops_te.to_numpy(), dtype=torch.float32)
+            data_te['cbow'] = torch.tensor(bow_input.iloc[test_index].to_numpy(), dtype=torch.float32)
+
+        if 'homemeds' in modality_to_use:
+            data_tr['homemeds'] = hm_tr
+            data_val['homemeds'] = hm_val
+            data_te['homemeds'] = hm_te
+
+        if 'pmh' in modality_to_use:
+            data_tr['pmh'] = pmh_tr
+            data_val['pmh'] = pmh_val
+            data_te['pmh'] = pmh_te
+
+        if 'problist' in modality_to_use:
+            data_tr['problist'] = problist_tr
+            data_val['problist'] = problist_val
+            data_te['problist'] = problist_te
+
+        if 'flow' in modality_to_use:
+            data_tr['flow'] = [flowsheet_very_dense[train_index, :, :],
+                               torch.index_select(flowsheet_other_flow, 0, torch.tensor(train_index)).coalesce()]
+            data_val['flow'] = [flowsheet_very_dense[valid_index, :, :],
+                                torch.index_select(flowsheet_other_flow, 0, torch.tensor(valid_index)).coalesce()]
+            data_te['flow'] = [flowsheet_very_dense[test_index, :, :],
+                               torch.index_select(flowsheet_other_flow, 0, torch.tensor(test_index)).coalesce()]
+
+        if 'meds' in modality_to_use:
+            data_tr['meds'] = [torch.index_select(dense_med_ids, 0, torch.tensor(train_index)).coalesce(),
+                               torch.index_select(dense_med_dose, 0, torch.tensor(train_index)).coalesce(),
+                               torch.index_select(dense_med_units, 0, torch.tensor(train_index)).coalesce()]
+            data_val['meds'] = [torch.index_select(dense_med_ids, 0, torch.tensor(valid_index)).coalesce(),
+                                torch.index_select(dense_med_dose, 0, torch.tensor(valid_index)).coalesce(),
+                                torch.index_select(dense_med_units, 0, torch.tensor(valid_index)).coalesce()]
+            data_te['meds'] = [torch.index_select(dense_med_ids, 0, torch.tensor(test_index)).coalesce(),
+                               torch.index_select(dense_med_dose, 0, torch.tensor(test_index)).coalesce(),
+                               torch.index_select(dense_med_units, 0, torch.tensor(test_index)).coalesce()]
+
+    if args.modelType == 'transformer':
+        if eval(args.bestModel) == True:
+            config['e_dim_flow'] = param_values['e_dim_flow']
+            config['AttTS_depth'] = param_values['AttTS_depth']
+            temp_list_heads = [i for i in param_values.keys() if 'AttTS_Heads' in i]
+            if len(temp_list_heads) > 1:
+                config['AttTS_Heads'] = param_values[temp_list_heads[-1]] # this assumes that the head names are ordered which has been the case
+            else:
+                config['AttTS_Heads'] = param_values['AttTS_Heads']
+            config['cnn_before_Att'] = param_values['cnn_before_Att']
+            config['kernel_size_conv'] = param_values['kernel_size_conv']
+            config['stride_conv'] = param_values['stride_conv']
+            config['ats_dropout'] = param_values['ats_dropout']
+        else:
+            config['e_dim_flow'] = args.e_dim_flow
+            config['AttTS_depth'] = args.AttTSDepth
+            config['AttTS_Heads'] = args.AttTSHeads
+            config['cnn_before_Att'] = args.cnn_before_Att
+            config['kernel_size_conv'] = args.kernel_size_conv
+            config['stride_conv'] = args.stride_conv
+            config['ats_dropout'] = args.ats_dropout
+
+        model = preop_flow_med_bow_model.TS_Transformer_Med_index(**config).to(device)
+    else:
+        model = preop_flow_med_bow_model.TS_lstm_Med_index(**config).to(device)
+
+    if eval(args.bestModel) == True:
+        learn_rate = param_values['learningRate']
+        lr_patience = param_values['LRPatience']
+        lr_factor = param_values['learningRateFactor']
+        batchsize = param_values['batchSize']
+    else:
+        learn_rate = args.learningRate
+        lr_patience = args.LRPatience
+        lr_factor = args.learningRateFactor
+        batchsize = args.batchSize
+
+    optimizer = optim.Adam(model.parameters(), lr=learn_rate, weight_decay=1e-5)
+    # lr scheduler
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=lr_patience, verbose=True, factor=lr_factor)
+
+    # initializing the loss function
+    if not binary_outcome:
+        # criterion = torch.nn.MSELoss()
+        criterion = torch.nn.L1Loss()
+    else:
+      criterion = torch.nn.BCELoss()
+
+    total_train_loss = []
+    total_test_loss = []
+
+
+    updating_lr = learn_rate
+    best_metric = 1000 # some large number
+    lr_schedular_epoch_dict = {}
+    lr_schedular_epoch_dict[0] = updating_lr
+
+    for epoch in range(args.epochs):
+      loss_tr = 0
+      loss_tr_cls = 0
+      model.train()
+      ## the default __getitem__ is like 2 orders of magnitude slower
+      shuffle_index = torch.randperm(n=data_tr['outcomes'].shape[0])
+      if (args.overSampling == True) and (args.task != 'endofcase'):
+          pos_idx = (data_tr['outcomes'] == 1).nonzero()
+          neg_idx = (data_tr['outcomes'] == 0).nonzero()
+          if batchsize % 2 == 0:  # this is done because it was creating a problem when the batchsize was an odd number
+              nbatch = neg_idx.shape[0] // int(batchsize / 2)
+          else:
+              nbatch = neg_idx.shape[0] // math.ceil(batchsize / 2)
+      else:
+          nbatch = data_tr['outcomes'].shape[0] // batchsize
+      for i in range(nbatch):
+          if (overSampling == True) and (args.task != 'endofcase'):
+              if batchsize % 2 == 0:
+                  neg_indexbatch = neg_idx[range(i * int(batchsize / 2), (i + 1) * int(batchsize / 2))]
+              else:
+                  neg_indexbatch = neg_idx[range(i * math.ceil(batchsize / 2), (i + 1) * math.ceil(batchsize / 2))]
+              p = torch.from_numpy(np.repeat([1 / len(pos_idx)], len(pos_idx)))
+              pos_indexbatch = pos_idx[p.multinomial(num_samples=int(batchsize / 2),
+                                                     replacement=True)]  # this is sort of an equivalent of numpy.random.choice
+              these_index = torch.vstack([neg_indexbatch, pos_indexbatch]).reshape([batchsize])
+          else:
+              these_index = shuffle_index[range(i * batchsize, (i + 1) * batchsize)]
+
+          ## this collate method is pretty inefficent for this task but works with the generic DataLoader method
+
+
+          local_data={}
+          for k in data_tr.keys():
+              if type(data_tr[k]) != list:
+                  local_data[k] = torch.index_select(data_tr[k],  0 ,  these_index )
+              else:
+                  local_data[k] = [torch.index_select(x,  0 ,  these_index )  for x in data_tr[k]]
+
+          if args.task == 'endofcase':
+              local_data[1] = torch.hstack([local_data[1][:int(len(these_index) / 2)], local_data[-1][int(
+                  len(these_index) / 2):]])  # using hstack because vstack leads to two seperate tensors
+              local_data[0][:, -1] = local_data[
+                  1]  # this is being done because the last column has the current times which will be t1 timepoint for the second half of the batch
+              local_data[-1] = torch.from_numpy(np.repeat([1, 0], [int(batchsize / 2), batchsize - int(batchsize / 2)]))
+          if (args.includeMissingnessMasks):  # appending the missingness masks in training data
+              if 'preops' in modality_to_use:
+                  local_data['preops'] =[local_data['preops'], torch.tensor(preops_tr_mask.iloc[these_index].to_numpy(), dtype=torch.float32)]
+              if 'flow' in modality_to_use:
+                  local_data['flow'].append(very_dense_tr_mask[these_index, :, :])
+                  sparse_mask = torch.sparse_coo_tensor(local_data['flow'][1]._indices(), np.ones(len(local_data['flow'][1]._values())), local_data['flow'][1].size())
+                  local_data['flow'].append(sparse_mask)
+
+          data_train, mod_order_dict = preop_flow_med_bow_model.collate_time_series(local_data, device)
+
+          # reset the gradients back to zero as PyTorch accumulates gradients on subsequent backward passes
+          optimizer.zero_grad()
+
+          y_pred, reg_loss = model(data_train[0])
+          cls_loss_tr = criterion(y_pred.squeeze(-1), data_train[1].float().to(device)).float()
+          train_loss = cls_loss_tr + reg_loss
+          train_loss.backward()
+          optimizer.step()
+          loss_tr += train_loss.item()
+          loss_tr_cls += cls_loss_tr.item()
+      loss_tr = loss_tr / data_tr['outcomes'].shape[0]
+      loss_tr_cls = loss_tr_cls/ data_tr['outcomes'].shape[0]
+
+      loss_te = 0
+      loss_te_cls = 0
+      with torch.no_grad():
+        model.eval()
+        true_y_test = []
+        pred_y_test = []
+
+        # nbatch = data_te['outcomes'].shape[0] // batchsize
+        nbatch, remain_batch = divmod(data_te['outcomes'].shape[0], batchsize)
+        if remain_batch > 0:
+            nbatch=nbatch+1  # this is being done to make sure all the test data is being used when the test set size is not a multiple of batchsize
+        for i in range(nbatch):
+
+            if (remain_batch>0) and (i==nbatch-1):
+                these_index = torch.tensor(list(range(i * batchsize, (i * batchsize)+remain_batch)), dtype=int)
+            else:
+                these_index = torch.tensor(list(range(i * batchsize, (i + 1) * batchsize)), dtype=int)
+            local_data = {}
+            for k in data_te.keys():
+                if type(data_te[k]) != list:
+                    local_data[k] = torch.index_select(data_te[k], 0, these_index)
+                else:
+                    local_data[k] = [torch.index_select(x, 0, these_index) for x in data_te[k]]
+
+            if args.task == 'endofcase':
+                local_data[1] = torch.hstack([local_data[1][:int(len(these_index) / 2)], local_data[-1][int(
+                    len(these_index) / 2):]])  # using hstack because vstack leads to two seperate tensors
+                local_data[0][:, -1] = local_data[
+                    1]  # this is being done because the last column has the current times which will be t1 timepoint for the second half of the batch
+                local_data[-1] = torch.from_numpy(np.repeat([1, 0], [int(batchsize / 2), batchsize - int(batchsize / 2)]))
+            if (args.includeMissingnessMasks):  # appending the missingness masks in test data
+                if 'preops' in modality_to_use:
+                    local_data['preops'] = [local_data['preops'],
+                                            torch.tensor(preops_te_mask.iloc[these_index].to_numpy(), dtype=torch.float32)]
+                if 'flow' in modality_to_use:
+                    local_data['flow'].append(very_dense_te_mask[these_index, :, :])
+                    sparse_mask = torch.sparse_coo_tensor(local_data['flow'][1]._indices(),
+                                                          np.ones(len(local_data['flow'][1]._values())),
+                                                          local_data['flow'][1].size())
+                    local_data['flow'].append(sparse_mask)
+
+            data_valid, mod_order_dict = preop_flow_med_bow_model.collate_time_series(local_data, device)
+
+            y_pred, reg_loss = model(data_valid[0])
+            cls_loss_te = criterion(y_pred.squeeze(-1),data_valid[1].float().to(device)).float()
+            test_loss = cls_loss_te + reg_loss
+            loss_te += test_loss.item()
+            loss_te_cls += cls_loss_te.item()
+
+            # values from the last epoch; it will get overwritten
+            # using test data only instead of validation data for evaluation currently because the validation will be done on a seperate data
+            true_y_test.append(data_valid[1].float().detach().numpy())
+            pred_y_test.append(y_pred.squeeze(-1).cpu().detach().numpy())
+
+
+        loss_te = loss_te / data_te['outcomes'].shape[0]
+        loss_te_cls = loss_te_cls/ data_te['outcomes'].shape[0]
+
+        if best_metric > loss_te_cls:
+            best_metric = loss_te_cls
+            pred_y_test_best = pred_y_test
+
+        # display the epoch training and test loss
+        print("epoch : {}/{}, training loss = {:.8f}, validation loss = {:.8f}".format(epoch + 1, args.epochs, loss_tr_cls,loss_te_cls) )
+        total_train_loss.append(loss_tr)
+        total_test_loss.append(loss_te)
+
+      scheduler.step(loss_te_cls)
+
+      if optimizer.param_groups[0]['lr'] != updating_lr:
+          updating_lr = optimizer.param_groups[0]['lr']
+          lr_schedular_epoch_dict[epoch] = updating_lr
+
+      # print("current lr ", optimizer.param_groups[0]['lr'])
+      # 1e-8 is obtained by multiplying 1e-3 by (0.25)^5 so to make it general we can have initial_learning_rate * (learningRateFactor)^5
+      if optimizer.param_groups[0]['lr'] <= learn_rate * np.power(lr_factor, 5):  # hardcoding for now because our schedule is such that 10**-3 * (1, 1/4, 1/16, 1/64, 1/256, 1/1024, 0) with an initial rate of 10**-3 an learning rate factor of 0.25
+          print("inside the early stopping loop")
+          print("best validation loss ", best_metric)
+          # epoch =epochs
+          # true_y_test.append(data_valid[1].float().detach().numpy())
+          # pred_y_test.append(y_pred.squeeze(-1).cpu().detach().numpy())
+          break
+
+
+    model.eval()
+
+    true_y_test = np.concatenate(true_y_test)
+    pred_y_test = np.concatenate(pred_y_test_best)
+
     test_auroc = roc_auc_score(true_y_test, pred_y_test)
     test_auprc = average_precision_score(true_y_test, pred_y_test)
-    print(" Number of epochs that ran ", epoch)
-    print("Test AUROC and AUPRC values are ", np.round(test_auroc, 4), np.round(test_auprc, 4))
+
+    perf_metric[runNum, 0] =test_auroc
+    perf_metric[runNum, 1] = test_auprc
+
+    if eval(args.bestModel) == True:
+        metadata_file = dir_name + 'BestModel_metadata' + str(best_5_random_number[runNum]) + '_' + args.task + '.pickle'  # had to use pickle instead of json because there is a tensor in config which is assigned to dict outside of loop so can't convert it to list
+        with open(metadata_file, 'wb') as outfile: pickle.dump(config, outfile)
+        model_cachename = hashlib.md5(json.dumps(vars(args)).encode())
+        saving_path_name = dir_name + 'BestModel_' + str(int(best_5_random_number[runNum])) + "_" + modal_name + "_" + str(model_cachename.hexdigest()) + ".pth"
+        torch.save(model.state_dict(), saving_path_name)
+
+        best_dict_local['randomSeed'] = int(best_5_random_number[runNum])
+        best_dict_local['outcome'] = str(args.task)
+        best_dict_local['run_number'] = runNum
+        best_dict_local['modalities_used'] = modality_to_use
+        best_dict_local['model_params'] = config
+        best_dict_local['model_file_path'] = saving_path_name
+        best_dict_local['train_orlogids'] = outcome_df.iloc[train_index]["orlogid_encoded"].values.tolist()
+        best_dict_local['test_orlogids'] =outcome_df.iloc[test_index]["orlogid_encoded"].values.tolist()
+        best_dict_local['outcome_rate'] = np.round(outcome_df.iloc[test_index]["outcome"].mean(), decimals=4)
+        # this is saving the true and predicted y for each run because the test set is the same
+        if runNum == 0:
+            outcome_with_pred_test = outcome_df.iloc[test_index]
+            outcome_with_pred_test = outcome_with_pred_test.rename(columns={'outcome': 'y_true'})
+            outcome_with_pred_test['y_pred_' + str(int(best_5_random_number[runNum]))] = pred_y_test
+        else:
+            outcome_with_pred_test['y_pred_' + str(int(best_5_random_number[runNum]))] = pred_y_test
+        dict_key = 'run_randomSeed_' + str(int(best_5_random_number[runNum]))  # this is so dumb because it wont take the key dynamically
+        best_metadata_dict[dict_key] = best_dict_local
+
     fpr_roc, tpr_roc, thresholds_roc = roc_curve(true_y_test, pred_y_test, drop_intermediate=False)
     precision_prc, recall_prc, thresholds_prc = precision_recall_curve(true_y_test, pred_y_test)
     # interpolation in ROC
@@ -1164,35 +1299,52 @@ else:
     mean_fpr = np.round(mean_fpr, decimals=2)
     print("Sensitivity at 90%  specificity is ", np.round(tpr_inter[np.where(mean_fpr == 0.10)], 2))
 
-    if args.task=='endofcase':
-        outcome_rate = 0.5  # this is hardcoded here
-    else:
-        outcome_rate = np.round(outcome_df.iloc[test_index]["outcome"].mean(), decimals=4)
-
     end_time = datetime.now()  # only writing part is remaining in the code to time
     timetaken = end_time-start_time
-    print("time taken to run the complete training script", timetaken)
+    print("time taken to finish run number ", runNum, " is ", timetaken)
 
-    csvdata = {
-        'hp': json.dumps(vars(args)),
-        'Initial_seed': args.randomSeed,  # this is being done so its easier to differentiate each line in the final csv file
-        'outcome_rate': outcome_rate,
-        'AUROC': test_auroc,
-        'AUPRC': test_auprc,
-        'Sensitivity': tpr_inter[np.where(mean_fpr == 0.10)],
-        'git': args.git,
-        'name': args.nameinfo,
-        'target': args.task,
-        'evaltime': datetime.now().strftime("%y-%m-%d-%H:%M:%S"),
-        'lr_change_epoch': json.dumps(lr_schedular_epoch_dict),
-        'time': timetaken
-    }
 
-    # breakpoint()
-    csvdata = pd.DataFrame(csvdata)
-    outputcsv = os.path.join(out_dir, args.outputcsv)
-    if (os.path.exists(outputcsv)):
-        csvdata.to_csv(outputcsv, mode='a', header=False, index=False)
-    else:
-        csvdata.to_csv(outputcsv, header=True, index=False)
+print("Tranquila")
+# breakpoint()
+# saving metadata for all best runs in json; decided to save it also as pickle because the nested datatypes were not letting it be serializable
+metadata_filename = dir_name + '/Best_runs_metadata.pickle'
+with open(metadata_filename, 'wb') as outfile: pickle.dump(best_metadata_dict, outfile)
+
+# saving the performance metrics from all best runs and all models in a pickle file
+perf_filename = sav_dir + str(args.task) + '_Best_perf_metrics_combined_intraoperative.pickle'
+if not os.path.exists(perf_filename):
+    data = {}
+    data[str(args.modelType)] = {modal_name: perf_metric}
+    with open(perf_filename, 'wb') as file:
+        pickle.dump(data, file)
+else:
+    with open(perf_filename, 'rb') as file: existing_data = pickle.load(file)
+
+    try:
+        existing_data[str(args.modelType)][modal_name] = perf_metric
+    except(KeyError):  # this is to take care of the situation when a new model is added to the file
+        existing_data[str(args.modelType)] = {}
+        existing_data[str(args.modelType)][modal_name] = perf_metric
+
+    # Save the updated dictionary back to the pickle file
+    with open(perf_filename, 'wb') as file: pickle.dump(existing_data, file)
+
+# saving the test set predictions for all models and all runs
+pred_filename = sav_dir + str(args.task) + '_Best_pred_combined_intraoperative.pickle'
+if not os.path.exists(pred_filename):
+    data = {}
+    data[str(args.modelType)] = {modal_name: outcome_with_pred_test.values}
+    with open(pred_filename, 'wb') as file:
+        pickle.dump(data, file)
+else:
+    with open(pred_filename, 'rb') as file: existing_data = pickle.load(file)
+
+    try:
+        existing_data[str(args.modelType)][modal_name] = outcome_with_pred_test.values
+    except(KeyError):  # this is to take care of the situation when a new model is added to the file
+        existing_data[str(args.modelType)] = {}
+        existing_data[str(args.modelType)][modal_name] = outcome_with_pred_test.values
+
+    # Save the updated dictionary back to the pickle file
+    with open(pred_filename, 'wb') as file: pickle.dump(existing_data, file)
 
