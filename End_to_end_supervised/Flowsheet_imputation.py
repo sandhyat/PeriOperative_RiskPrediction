@@ -1,6 +1,6 @@
 """
 Code to perform one time imputation on two types of flowsheets data (very dense and other)
-1) For the very dense, the imputation is simple
+1) For the very dense, the imputation is LOCF. The technique involves taking the diff so that ater the to_dense and cumsum we get the original tensor back
 2) for the other sparse, the method would involve running a regression of preops on the first observed value of each time series
 
 """
@@ -294,13 +294,14 @@ def flowsheet_imputer_estimate_generator_training(first_flow, preops, inp_data_d
 
     return
 
-def flowsheet_imputation_training(very_dense_flow, other_intra_flow_wlabs, inp_data_dir, imputer_other_flow =None):
+# this has a lot of issues so wrote a new function which is cleaner
+def flowsheet_imputation_training_old(very_dense_flow, other_intra_flow_wlabs, inp_data_dir, imputer_other_flow =None):
 
     """ INTERPOLATION for GAPS -> RECODING -> SPARSIFY -> TO DENSE -> CUMSUM (took care of imputing the initial nans)  """
 
     """ OTHER FLOW DATA """
 
-    # reading the imputers
+    # # reading the imputers
     if (not isinstance(imputer_other_flow, pd.DataFrame)):
         imputer_other_flow = pd.read_csv(inp_data_dir+ "flow_ts/Xgboost_model_Other_flow/Other_flow_0time_imputedvalues.csv")
     # breakpoint()
@@ -318,17 +319,13 @@ def flowsheet_imputation_training(very_dense_flow, other_intra_flow_wlabs, inp_d
 
     other_intra_flow_wlabs['timepoint'] = other_intra_flow_wlabs['timepoint'] + 1
     # fill in the nans (gaps in between) with linear interpolation for a combination of person and measure
-    other_intra_flow_wlabs.groupby(by=['orlogid_encoded', 'measure_index'], group_keys=True).apply(
-        lambda group: group.interpolate(method='linear', limit_direction='forward'))
+    other_intra_flow_wlabs.groupby(by=['orlogid_encoded', 'measure_index'], group_keys=True).apply( lambda group: group.interpolate(method='linear', limit_direction='forward'))
 
     # appending the 0-time estimate
-    other_intra_flow_wlabs = pd.concat([other_intra_flow_wlabs, imputer_other_flow_coord[
-        imputer_other_flow_coord['orlogid_encoded'].isin(other_intra_flow_wlabs['orlogid_encoded'])]], ignore_index=True)
+    other_intra_flow_wlabs = pd.concat([other_intra_flow_wlabs, imputer_other_flow_coord[imputer_other_flow_coord['orlogid_encoded'].isin(other_intra_flow_wlabs['orlogid_encoded'])]], ignore_index=True)
     other_intra_flow_wlabs.sort_values(by=['orlogid_encoded', 'timepoint'], inplace=True)
 
-    other_intra_flow_wlabs = other_intra_flow_wlabs.set_index(['orlogid_encoded', 'measure_index', 'timepoint']).groupby(
-        by=['orlogid_encoded',
-            'measure_index'], group_keys=True).diff().dropna().reset_index()  # by this point there shouldn't be any nans except for the starting ones which will be carried forward anyway
+    other_intra_flow_wlabs = other_intra_flow_wlabs.set_index(['orlogid_encoded', 'measure_index', 'timepoint']).groupby(by=['orlogid_encoded','measure_index'], group_keys=True).diff().dropna().reset_index()  # by this point there shouldn't be any nans except for the starting ones which will be carried forward anyway
 
     # this is repeated here because the 0 time has become nan now and removed but we still want its value
     other_intra_flow_wlabs_imputed = pd.concat([other_intra_flow_wlabs, imputer_other_flow_coord[
@@ -337,8 +334,8 @@ def flowsheet_imputation_training(very_dense_flow, other_intra_flow_wlabs, inp_d
     if True:
         """  Saving the recoded (coordinate format) and imputed data to feather files so that it is easily available """
         other_intra_flow_wlabs_imputed.to_feather('/home/trips/PeriOperative_RiskPrediction/Imputed_other_flow.feather')
-
-    breakpoint()
+    # #
+    # breakpoint()
 
     """ VERY DENSE DATA """
 
@@ -403,6 +400,8 @@ def flowsheet_imputation_training(very_dense_flow, other_intra_flow_wlabs, inp_d
                              var_name='measure_index', value_name='VALUE')
         mask_coord.replace(mapping_flowsheet_measurename, inplace=True)
 
+    # breakpoint()
+
     very_dense_flowsheet_measures = list(very_dense_flow.columns)
     very_dense_flowsheet_measures.remove('timepoint')
     very_dense_flowsheet_measures.remove('orlogid_encoded')
@@ -417,8 +416,7 @@ def flowsheet_imputation_training(very_dense_flow, other_intra_flow_wlabs, inp_d
 
     print("cross1")
 
-    first_rec_index = very_dense_flow_coord.groupby(by=['orlogid_encoded', 'measure_index'], group_keys=True)[
-        'timepoint'].min().reset_index().set_index(['orlogid_encoded', 'measure_index', 'timepoint'])
+    first_rec_index = very_dense_flow_coord.groupby(by=['orlogid_encoded', 'measure_index'], group_keys=True)['timepoint'].min().reset_index().set_index(['orlogid_encoded', 'measure_index', 'timepoint'])
 
     print("cross2")
 
@@ -426,25 +424,24 @@ def flowsheet_imputation_training(very_dense_flow, other_intra_flow_wlabs, inp_d
     print("cross3")
 
     first_rec_values = a0.loc[first_rec_index.index]
-    first_rec_values.drop(0, level=2, axis=0, inplace=True) # dropping the observations for which there already exists the 0 time values
+    first_rec_values.drop(0, level=2, axis=0, inplace=True) # dropping the observations for which there already exists the 0 time values; level =2 is the time level in multiindex
     first_rec_values.reset_index(inplace=True)
 
     print("cross4")
 
-    very_dense_flow_coord_with0timeforall = pd.concat([very_dense_flow_coord, first_rec_values])
-
-    print("cross5")
-
     # this takes a lot of time
-    very_dense_flowsheet_coord_imputed = very_dense_flow_coord_with0timeforall.set_index(['orlogid_encoded', 'measure_index', 'timepoint']).groupby(
+    very_dense_flowsheet_coord_imputed = very_dense_flow_coord.set_index(['orlogid_encoded', 'measure_index', 'timepoint']).groupby(
         by=['orlogid_encoded',
             'measure_index'], group_keys=True).diff().dropna().reset_index()
 
+    very_dense_flow_coord_with0timeforall = pd.concat([first_rec_values, very_dense_flowsheet_coord_imputed])
+
+    # breakpoint()
     print("cross6")
 
     if True:
         """  Saving the recoded (coordinate format) and imputed data to feather files so that it is easily available """
-        very_dense_flowsheet_coord_imputed.to_feather('/home/trips/PeriOperative_RiskPrediction/Imputed_very_dense_flow.feather')
+        very_dense_flow_coord_with0timeforall.to_feather('/home/trips/PeriOperative_RiskPrediction/Imputed_very_dense_flow.feather')
 
         end_time = datetime.now()
 
@@ -474,9 +471,71 @@ def flowsheet_imputation_training(very_dense_flow, other_intra_flow_wlabs, inp_d
     return other_intra_flow_wlabs_imputed, very_dense_flowsheet_coord_imputed, flowsheet_dense_comb
 
 
+def flowsheet_imputation_training(very_dense_flow, other_intra_flow_wlabs, inp_data_dir, imputer_other_flow =None):
+    # updated on Aug 5 2024 after discussion with Ryan (about the dense ones) and looking into the isolate inference branch of Epic codes (to confirm that linear innterpolation is not needed in between for other flow)
+    # for dense: the output from this file will be coordinate format which will be converted to coo and then to dense and cumsum to ultimately obtain the LOCF verison with the initial values backfill imputed
+    # for other flow: the output of this function will be coordinate format which will be converted to sparse tensors and used as it is. The first value here is either preop predicted or actually recorded.
+
+    # # reading the imputers
+    if (not isinstance(imputer_other_flow, pd.DataFrame)):
+        imputer_other_flow = pd.read_csv(inp_data_dir+ "flow_ts/Xgboost_model_Other_flow/Other_flow_0time_imputedvalues.csv")
+
+    """ OTHER FLOW DATA """
+    imputer_other_flow_coord = pd.melt(imputer_other_flow, id_vars=['orlogid_encoded'],
+                                       value_vars=[i for i in imputer_other_flow.columns if
+                                                   i not in ['Unnamed: 0', 'orlogid_encoded']], var_name='measure_index',
+                                       value_name='VALUE')
+
+    imputer_other_flow_coord['measure_index'] = imputer_other_flow_coord['measure_index'].astype('int32')
+
+    imputer_other_flow_coord['timepoint'] = 0
+    other_intra_flow_wlabs.dropna(subset=["VALUE"])
+
+    other_intra_flow_wlabs = pd.concat([other_intra_flow_wlabs, imputer_other_flow_coord], ignore_index=True).drop_duplicates(subset=["orlogid_encoded", "measure_index", "timepoint"] , keep="first")
+
+    other_intra_flow_wlabs.sort_values(by=['orlogid_encoded', 'timepoint'], inplace=True)
+    other_intra_flow_wlabs_imputed = pd.concat([
+        other_intra_flow_wlabs[other_intra_flow_wlabs.timepoint == 0]
+        , other_intra_flow_wlabs.set_index(['orlogid_encoded', 'measure_index', 'timepoint']).groupby(by=['orlogid_encoded','measure_index']).diff().dropna().reset_index()
+        ], ignore_index=True)
+
+    """  Saving the recoded (coordinate format) and imputed data to feather files so that it is easily available """
+    other_intra_flow_wlabs_imputed.to_feather('/home/trips/PeriOperative_RiskPrediction/Imputed_other_flow.feather')
+
+
+    """ VERY DENSE DATA """
+    very_dense_flowsheet_measures = list(very_dense_flow.columns)
+    very_dense_flowsheet_measures.remove('timepoint')
+    very_dense_flowsheet_measures.remove('orlogid_encoded')
+    mapping_flowsheet_measurename = dict(
+        zip(very_dense_flowsheet_measures, range(len(very_dense_flowsheet_measures))))
+
+    very_dense_flow_coord = pd.melt(very_dense_flow, id_vars=['orlogid_encoded', 'timepoint'],
+                                                 value_vars=very_dense_flowsheet_measures,
+                                                 var_name='measure_index', value_name='VALUE')
+    very_dense_flow_coord.replace(mapping_flowsheet_measurename, inplace=True)
+    very_dense_flow_coord.dropna(inplace=True)
+
+    first_rec_index = very_dense_flow_coord.loc[very_dense_flow_coord.groupby(['measure_index', 'orlogid_encoded'])['timepoint'].idxmin()]
+    first_rec_index = first_rec_index[first_rec_index.timepoint > 0 ]
+    first_rec_index['timepoint'] = 0
+
+    # this takes a lot of time
+    very_dense_flowsheet_coord_imputed = very_dense_flow_coord.set_index(['orlogid_encoded', 'measure_index', 'timepoint']).groupby(by=['orlogid_encoded','measure_index'], group_keys=True).diff().dropna().reset_index()
+    very_dense_flow_coord_with0timeforall = pd.concat([first_rec_index, very_dense_flowsheet_coord_imputed], ignore_index=True)
+
+    """  Saving the recoded (coordinate format) and imputed data to feather files so that it is easily available """
+    very_dense_flow_coord_with0timeforall.to_feather('/home/trips/PeriOperative_RiskPrediction/Imputed_very_dense_flow.feather')
+
+    end_time = datetime.now()
+
+    timetaken = end_time - start_time
+    print("time taken to run the imputation script", timetaken)
+
 if False:
     # reading files
     # data_dir = '/input/'
+    # breakpoint()
 
     first_imputer_path = data_dir+ "flow_ts/Xgboost_model_Other_flow/Other_flow_0time_imputedvalues.csv"
     if(not os.path.exists(first_imputer_path)):
