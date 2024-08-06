@@ -361,7 +361,7 @@ for runNum in range(len(best_5_random_number)):
                                                                                                                    outcome_df[
                                                                                                                        "outcome"].values,
                                                                                                                    binary_outcome=binary_outcome,
-                                                                                                                   valid_size=0.05, random_state=int(best_5_random_number[runNum]), input_dr=data_dir, output_dr=out_dir)  # change back to 0.00005
+                                                                                                                   valid_size=0.00005, random_state=int(best_5_random_number[runNum]), input_dr=data_dir, output_dr=out_dir)  # change back to 0.00005
 
         if args.task == 'icu':  # this part is basically dropping the planned icu cases from the evaluation set
             test_index = preops.iloc[test_index][preops.iloc[test_index]['plannedDispo'] != 'ICU']['plannedDispo'].index

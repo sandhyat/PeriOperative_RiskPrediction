@@ -236,7 +236,7 @@ preops = preops.drop(columns=to_drop_old_pmh_problist_with_others)
 
 # this is being done to remain consistent with other methods
 test_size = 0.2
-valid_size = 0.00005  # change back to 0.00005 for the full dataset
+valid_size = 0.0005  # change back to 0.00005 for the full dataset, since the validation set is used in the off the shelf tabnet api, we need valid set big enough with both labels
 y_outcome = outcome_df["outcome"].values
 preops.reset_index(drop=True, inplace=True)
 upto_test_idx = int(test_size * len(preops))
@@ -422,7 +422,7 @@ for runNum in range(len(best_5_random_number)):
         home_meds_embedded = home_meds[['orlogid_encoded', 'rxcui']].merge(Drg_pretrained_embedings, how='left', on='rxcui')
         home_meds_embedded.drop(columns=['code', 'description', 'source'], inplace=True)
 
-        # breakpoint()
+
         # home meds basic processing
         home_meds_freq = home_meds[['orlogid_encoded', 'rxcui', 'Frequency']].pivot_table(index='orlogid_encoded',
                                                                                           columns='rxcui',
