@@ -609,8 +609,8 @@ def load_epic(outcome, modality_to_uselist, randomSeed, data_dir, out_dir):  #da
         flowsheet_very_dense = flowsheet_very_dense_sparse_form.to_dense()
         flowsheet_very_dense = torch.cumsum(flowsheet_very_dense, dim=1)
 
-        train_Xflow = np.concatenate((flowsheet_very_dense[train_index, :, :], torch.index_select(flowsheet_other_flow, 0, torch.tensor(train_index)).coalesce().to_dense()), axis=2)
-        test_Xflow = np.concatenate((flowsheet_very_dense[test_index, :, :], torch.index_select(flowsheet_other_flow, 0, torch.tensor(test_index)).coalesce().to_dense()), axis=2)
+        train_Xflow = np.concatenate((flowsheet_very_dense[train_index, :, :], torch.cumsum(torch.index_select(flowsheet_other_flow, 0, torch.tensor(train_index)).coalesce().to_dense(),axis=1)), axis=2)
+        test_Xflow = np.concatenate((flowsheet_very_dense[test_index, :, :], torch.cumsum(torch.index_select(flowsheet_other_flow, 0, torch.tensor(test_index)).coalesce().to_dense(),axis=1)), axis=2)
 
         scaler = StandardScaler()
         scaler.fit(train_Xflow.reshape(-1, train_Xflow.shape[-1]))
