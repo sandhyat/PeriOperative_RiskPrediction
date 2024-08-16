@@ -484,6 +484,15 @@ for runNum in range(len(best_5_random_number)):
         features = features + list(prob_list_emb_sb_final.columns)
 
 
+    # breakpoint()
+    if False:
+        # this was done post facto
+        scarf_featureorder = {}
+        scarf_featureorder['all_feat'] = features
+
+        output_file_name = dir_name + 'scarf_feat_' + str(task) + '.json'
+        with open(output_file_name, 'w') as outfile: json.dump(scarf_featureorder, outfile)
+
     train_data = np.concatenate(train_set, axis=1)
     valid_data = np.concatenate(valid_set,axis=1)
     test_data = np.concatenate(test_set, axis=1)
