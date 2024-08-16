@@ -333,6 +333,7 @@ def preprocess_inference(preops, metadata):
 
     for i in binary_variables:
         preops_ohe[i].fillna(0, inplace=True)
+        preops_ohe[i] = preops_ohe[i].astype('int32') # some object type are getting passed later on
 
     # this is kind of hardcoded; check your data beforehand for this; fixed this
     # this is done because there were two values for missing token (nan and -inf)
