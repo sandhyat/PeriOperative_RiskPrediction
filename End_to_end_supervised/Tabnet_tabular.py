@@ -258,8 +258,8 @@ if 'problist' in modality_to_use:
 
 best_5_random_number = []  # this will take the args when directly run otherwise it will read the number from the file namee
 if eval(args.bestModel) ==True:
-    path_to_dir = '/home/trips/PeriOperative_RiskPrediction/HP_output/'
-    sav_dir = '/home/trips/PeriOperative_RiskPrediction/Best_results/Preoperative/'
+    path_to_dir = '../HP_output/'
+    sav_dir = '../Best_results/Preoperative/'
     # best_file_name= path_to_dir + 'Best_trial_resulticu_TabNet_modal__preops_cbow_pmh_problist_homemeds174_24-07-17-10:55:55.json'
     file_names = os.listdir(path_to_dir)
     import re
@@ -345,6 +345,8 @@ for runNum in range(len(best_5_random_number)):
         valid_index = valid.index
 
 
+        ## dropping case year because using a dictionary that will be used when porting models
+        preops = preops.drop(columns=['case_year'])
         nunique = preops.nunique()
         types = preops.dtypes
 
@@ -352,21 +354,29 @@ for runNum in range(len(best_5_random_number)):
         continuous_columns = []
         categorical_dims = {}
 
+        categorical_dict = {}
         for col in preops.columns:
-            if types[col] == 'object' or nunique[col] < 80:
-                # print(col, preops[col].nunique(), preops[col].isna().any())
+            if types[col] == 'object' or nunique[col] < 40:
+                flag_na = 0
+                orig_vals = preops[col].unique()
                 if (preops[col].isna().any() == True) and types[col] == 'object':
                     if preops[col].nunique() > 2:
                         preops[col] = preops[col].fillna("VV_likely")
                 elif (preops[col].isna().any() == True) and types[col] == 'float':
                     preops[col] = preops[col].fillna(float('nan'))
+                elif (preops[col].isna().any() == False):
+                    flag_na =1
                 l_enc = LabelEncoder()
                 preops[col] = l_enc.fit_transform(preops[col].values)
+                categorical_dict[col] = dict(zip(orig_vals,preops[col].unique()))
                 categorical_columns.append(col)
-                categorical_dims[col] = len(l_enc.classes_)
+                if flag_na==1:
+                    categorical_dims[col] = len(l_enc.classes_)+1
+                    categorical_dict[col][float('nan')]= len(l_enc.classes_)
+                else:
+                    categorical_dims[col] = len(l_enc.classes_)
             else:
                 continuous_columns.append(col)
-
         for colname in continuous_columns: preops.fillna(preops.loc[train_index, colname].mean(), inplace=True)
 
         preops_tr = preops.iloc[train_index]
@@ -381,14 +391,25 @@ for runNum in range(len(best_5_random_number)):
 
         features = list(preops_tr.columns)
 
+        if True:
+            # this was done post facto
+            tabnet_featureorder = {}
+            tabnet_featureorder['all_feat']=features
+            tabnet_featureorder['cont_var']=continuous_columns
+            tabnet_featureorder['cat_dict_levels']=categorical_dict
+            tabnet_featureorder['cat_var']=categorical_columns
+            tabnet_featureorder['n_col_unique']=nunique.to_dict()
+
+            output_file_name = dir_name + 'tabnet_feat_' + str(task) + '.pickle'
+            with open(output_file_name, 'wb') as outfile: pickle.dump(tabnet_featureorder, outfile)
+
         cat_idxs = [colname for colname, f in enumerate(features) if f in categorical_columns]
 
         cat_dims = [categorical_dims[f] for colname, f in enumerate(features) if f in categorical_columns]
 
         bow_input = pd.read_csv(data_dir + 'cbow_proc_text.csv')
 
-        bow_input = bow_input.merge(new_index, on="orlogid_encoded", how="inner").set_index('new_person').reindex(list(range(preops.index.min(),preops.index.max()+1)),fill_value=0).reset_index().drop(["orlogid_encoded"], axis=1).rename(
-            {"new_person": "person_integer"}, axis=1).sort_values(["person_integer"]).reset_index(drop=True).drop(["person_integer"], axis=1)
+        bow_input = bow_input.merge(new_index, on="orlogid_encoded", how="inner").set_index('new_person').reindex(list(range(preops.index.min(),preops.index.max()+1)),fill_value=0).reset_index().drop(["orlogid_encoded"], axis=1).rename({"new_person": "person_integer"}, axis=1).sort_values(["person_integer"]).reset_index(drop=True).drop(["person_integer"], axis=1)
         bow_cols = [col for col in bow_input.columns if 'BOW' in col]
         bow_input['BOW_NA'] = np.where(np.isnan(bow_input[bow_cols[0]]), 1, 0)
         bow_input.fillna(0, inplace=True)
@@ -581,12 +602,13 @@ for runNum in range(len(best_5_random_number)):
     perf_metric[runNum, 1] = test_auprc
 
     if eval(args.bestModel) == True:
-        saving_path_name = dir_name +  'BestModel_' + str(int(best_5_random_number[runNum])) + "_" + modal_name
+        saving_path_name = dir_name + 'BestModel_' + str(int(best_5_random_number[runNum])) + "_" + modal_name
         saved_filepath = clf.save_model(saving_path_name)
 
         best_dict_local['randomSeed'] = int(best_5_random_number[runNum])
         best_dict_local['run_number'] = runNum
         best_dict_local['modalities_used'] = modality_to_use
+        best_dict_local['categorical_levels'] = categorical_dict
         best_dict_local['model_params'] = tabnet_params
         best_dict_local['train_orlogids'] = outcome_df.iloc[train_index]["orlogid_encoded"].values.tolist()
         best_dict_local['valid_orlogids'] = outcome_df.iloc[valid_index]["orlogid_encoded"].values.tolist()
