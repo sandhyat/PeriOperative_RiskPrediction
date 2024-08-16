@@ -346,7 +346,8 @@ for runNum in range(len(best_5_random_number)):
 
 
         ## dropping case year because using a dictionary that will be used when porting models
-        preops = preops.drop(columns=['case_year'])
+        if 'case_year' in preops.columns: # this is needed because of multiple runs
+            preops = preops.drop(columns=['case_year'])
         nunique = preops.nunique()
         types = preops.dtypes
 
