@@ -916,8 +916,8 @@ def objective(trial, args):
     lr_schedular_epoch_dict[0] = updating_lr
 
     num_epochs = 50
-
-    for epoch in range(num_epochs):  # setting a max of 100 on the number of batches
+    print("Started one trial")
+    for epoch in range(num_epochs):  # setting a max of 50 on the number of epochs
         loss_tr = 0
         loss_tr_cls = 0
         model.train()
@@ -1068,6 +1068,7 @@ def objective(trial, args):
             pred_y_test = np.concatenate(pred_y_test)
         except(ValueError):
             print("---Debug---")
+            exit()
             breakpoint()
         try:
             val_auroc = roc_auc_score(true_y_test, pred_y_test)
@@ -1075,7 +1076,7 @@ def objective(trial, args):
         except(ValueError):
             val_auroc=0
             print("THE VALIDATION SET DIDN'T HAVE ANY POSITIVE EXAMPLES")
-            break
+            exit()
         trial.report(val_auroc, epoch)
 
         # Handle pruning based on the intermediate value.
@@ -1091,6 +1092,8 @@ def objective(trial, args):
             break
 
         print('AUROC and AUPRC for the validation set', val_auroc, val_auprc)
+
+    print("Finished one trial")
     return val_auroc
 
 
@@ -1164,6 +1167,8 @@ if __name__ == "__main__":
     modalities_to_add = '_modal_'
     for i in range(len(modality_to_use)):
         modalities_to_add = modalities_to_add + "_" + modality_to_use[i]
+
+    print("MODALITY TO USE ", modality_to_use)
 
     std_name = str(args_input.task)+"_"+str(args_input.modelType)+modalities_to_add + "_"+str(args_input.randomSeed) +"_"
     study = optuna.create_study(direction="maximize", study_name=std_name)
