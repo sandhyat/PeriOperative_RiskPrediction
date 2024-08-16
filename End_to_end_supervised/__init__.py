@@ -1,1 +1,2 @@
 from .Preops_processing import preprocess_train
+from .Preops_processing import preprocess_inference

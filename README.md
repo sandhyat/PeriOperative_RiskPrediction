@@ -29,14 +29,14 @@ Based on varying algorithm complexity the approaches mentioned can be explained 
 Code is available in `End_to_end_supervised/`
 
 1) `Preops_processing.py`: Prepares the preoperative data including one hot encoding, missingness imputation, normalization and saves the metadata into json. Also, creates the train test partitioning on the dataset. 
-2) `Flowsheet_imputation.py`: For dense flowsheets, we first create a separate dataframe consisting of the first values for each patient and measure index. Next, we take diff of the original dataframe and append the first value dataframe to the diffed dataframe. This will return the original data with LOCF imputation after taking a torch.cumsum(tensor.to_dense()). For other labs, we append the preop based first value estimate and then take diff. These can be used as it is used in a sparse format. Howwever, a cumsum is needed after dense to let the algo know about the starting value.
+2) `Flowsheet_imputation.py`: For dense flowsheets, we first create a separate dataframe consisting of the first values for each patient and measure index. Next, we take diff of the original dataframe and append the first value dataframe to the diffed dataframe. This will return the original data with LOCF imputation after taking a torch.cumsum(tensor.to_dense()). For other labs, we append the preop based first value estimate and then take diff. The cumsum(to_dense) operation is performed at the batch level in the collate function.
 3) `XGBT_tabular.py`: Trains an XGBT model on data available before the surgery starts. Has a bestModel argument that runs on the best setup from HP tuning file `XGBT_tabular_HP_tuning.py`.
 4) `Training_with_TimeSeries.py`: Jointly trains a deep model (LSTM/Transformer) using all the data modalities available at the end of surgery. Has a bestModel argument that reads the best HP setup and runs the final model.
 5) `preop_flow_med_bow_model.py`: Contains various deep learning architectures in the model class format that are callable in the `Training_with_TimeSeries.py` file.
 6) `Training_with_ts_Optuna_hp_tuning.py`: Used for hyperparameter tuning using Optuna as an off the shelf method. Similar functionalities are `Training_with_TimeSeries.py` but in the context of hyper parameter tuning. Currently, the best trial is not saved and the inbuilt storage of optuna is not used (for future).
 7) `ts_model_class_Optuna_hp_tune.py`: Mostly, same as `preop_flow_med_bow_model.py` but used during hp tuning. Could be removed in future.
 8) `ts_optuna_hp_tuning_combined.sh`: Bash file that runs the hp tuning file `Training_with_ts_Optuna_hp_tuning.py` for different modality ablations and with different random seeds.
-9) `Tabnet_tabular.py`: [Tabnet](https://arxiv.org/pdf/1908.07442) [implementation](https://github.com/dreamquark-ai/tabnet) on the preoperative stage modalities trained in a supervised manner. It has a `bestModel` argument which when selected will read the HP tuned result files and retrain the models on the train+validation set of dataset. It also saves the models and performance metrics and prediction values on the common test set across all ablations and all 5 repetitions.
+9) `Tabnet_tabular.py`: [Tabnet](https://arxiv.org/pdf/1908.07442) [implementation](https://github.com/dreamquark-ai/tabnet) on the preoperative stage modalities trained in a supervised manner. It has a `bestModel` argument which when selected will read the HP tuned result files and retrain the models on the train+validation set of dataset. It also saves the models and performance metrics and prediction values on the common test set across all ablations and all 5 repetitions. This model doesn't use 'case year' variable because the categorical variables' levels are saved as a dict to be used when validating on external dataset and time changes!
 10) `Tabnet_tabular_HP_tuning.py`: Used for Tabnet HP tuning using Optuna. 
 11) `tabnet_optuna_hp_tuning.sh`: Bash file that runs Tabnet HP tuning file for different preoperative stage modalities with different random seeds.
 
@@ -52,6 +52,12 @@ The best Hp is from the all modalities (including alerts and postop complication
 3) `Scarf_tabular.py`: [SCARF](https://arxiv.org/pdf/2106.15147) [implementation](https://github.com/clabrugere/pytorch-scarf) on the preoperative stage modalities to learn self supervised representation which is fed to an XGBT learner. It has a `bestModel` argument which when selected will read the HP tuned result files and retrain the models on the train+validation set of dataset. It also saves the models and performance metrics and prediction values on the common test set across all ablations and all 5 repetitions.
 4) `Scarf_tabular_HP_tuning.py`: Used for Scarf HP tuning using Optuna.
 5) `scarf_optuna_hp_tuning.sh`: Bash file that runs Scarf HP tuning file for different preoperative stage modalities with different random seeds. This one exposes the cuda device 1. Will need to be changed later to make it generalizable.
+
+**Time validation of the trained models**
+1) `Tabular_wave2.py`: This file takes the modality to be used and reads all the best models and validates them on wave2 (another time duration than the training one) dataset.
+
+**Result compilation**
+1) `Result_compiler.ipynb` : Reads the pickle files that have best results for all ablations saved and takes the average and saves it all in a table.
 
 #### 2) Requirements and implementation
 
