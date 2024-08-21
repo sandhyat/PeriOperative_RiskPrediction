@@ -259,7 +259,7 @@ if __name__ == '__main__':
                 outcome_with_pred_test = out_df[out_df['train_id_or_not']==0]
                 outcome_with_pred_test['y_true'] = test_labels
                 outcome_with_pred_test['y_pred_' + str(runNum)] = outcome_with_pred_test['pred_y']
-                outcome_with_pred_test = outcome_with_pred_test.drop(columns=['new_person','train_id_or_not', 'pred_y'])
+                outcome_with_pred_test = outcome_with_pred_test.drop(columns=['train_id_or_not', 'pred_y'])
             else:
                 outcome_with_pred_test['y_pred_' + str(runNum)] = out_df[out_df['train_id_or_not']==0]['pred_y']
             dict_key = 'run_randomSeed_' + str(runNum)  # this is so dumb because it wont take the key dynamically
