@@ -158,7 +158,7 @@ if __name__ == '__main__':
         file_names = os.listdir(path_to_dir)
         best_5_names = []
 
-        best_5_initial_name = 'Best_HPmodel_metadata' + args.outcome + "_modal_"
+        best_5_initial_name = 'Best_HPmodel_metadata_' + args.outcome + "_" + args.modelType + "_modal_"
 
         modal_name = 'DataModal'
         if eval('args.preops') == True:
@@ -171,9 +171,9 @@ if __name__ == '__main__':
         dir_name = sav_dir + args.modelType + '/' + modal_name + "_" + str(args.outcome) + "/"
         if eval('args.onlyEval') == True:
             best_5_names1 = {}
-            best_5_initial_name1 = 'Best_HPmodel_Combined_Perf_metrics' + args.outcome + "_all_modalities_"
+            best_5_initial_name1 = 'Best_HPmodel_' + args.outcome + "_" + args.modelType +'_Combined_Perf_metrics' + args.outcome + "_all_modalities_"
 
-            best_5_initial_name2 = 'Best_HPmodel_Best_Pred_file_Classification_'
+            best_5_initial_name2 = 'Best_HPmodel_' + args.outcome + "_" + args.modelType +'_Pred_file_Classification_'
             import re
             labelTest_names = {}
             for file_name in file_names:
