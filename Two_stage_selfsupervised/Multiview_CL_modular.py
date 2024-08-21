@@ -4,7 +4,7 @@ import torch.nn as nn
 from torch.utils.data import TensorDataset, DataLoader, Dataset
 from torch.optim import Adam
 import numpy as np
-from models import TSEncoder, TSEncoder_f, TSEncoder_m, TSEncoder_m_alt
+from models import TSEncoder, TSEncoder_f, TSEncoder_m, TSEncoder_m_alt, TSEncoder_a
 from models.losses import hierarchical_contrastive_loss
 from utils import take_per_row, split_with_nan, centerize_vary_length_series, torch_pad_nan
 import math
@@ -109,7 +109,9 @@ class MVCL_f_m_sep:
             after_iter_callback=None,
             after_epoch_callback=None,
             save_dir=None,
-            seed_used=0
+            seed_used=0,
+            alert_Ids=None,
+            alertID_embed_dim=1,
     ):
         ''' Initialize a MVCL model.
 
@@ -185,6 +187,8 @@ class MVCL_f_m_sep:
         self.w_cov = w_cov
         self.w_mse_across = w_mse
         self.w_ts_cross = w_ts_cross
+        self.alert_IDDim = alert_Ids
+        self.alertId_embdim = alertID_embed_dim
 
         # self._net = TSEncoder(input_dims=input_dims, output_dims=output_dims, medid_embedDim=medid_embed_dim, hidden_dims=hidden_dims, depth=depth).to(self.device)
         # self.net = torch.optim.swa_utils.AveragedModel(self._net)
@@ -209,9 +213,10 @@ class MVCL_f_m_sep:
         self.net_m_alt.update_parameters(self._net_m_alt)
 
 
-        # separate for alerts (using the same architecture as flowsheets)
-        self._net_a = TSEncoder_f(input_dims=alert_dim, output_dims=output_dims_a, hidden_dims=hidden_dims,
-                                  depth=depth).to(self.device)
+        # separate for alerts
+        self._net_a = TSEncoder_a(input_dims=alert_dim, output_dims=output_dims_a, id_len=self.alert_IDDim, id_emb_dim= self.alertId_embdim, hidden_dims=hidden_dims, depth=depth).to(self.device)
+        # self._net_a = TSEncoder_f(input_dims=alert_dim, output_dims=output_dims_a, hidden_dims=hidden_dims,
+        #                           depth=depth).to(self.device)
         self.net_a = torch.optim.swa_utils.AveragedModel(self._net_a)
         self.net_a.update_parameters(self._net_a)
 
@@ -347,13 +352,13 @@ class MVCL_f_m_sep:
 
         if 'alerts' in modalities_selected:
             train_data_a = proc_modality_dict_train['alerts']
-            assert (train_data_a.ndim == 3)
+            assert (train_data_a.ndim == 4) # this is 4 because of multiple alerts at the same time
             if sections >= 2:
                 train_data_a = np.concatenate(split_with_nan(train_data_a, sections, axis=1), axis=0)
-            temporal_missing_a = np.isnan(train_data_a).all(axis=-1).any(axis=0)
+            temporal_missing_a = np.isnan(train_data_a).all(axis=-1).any(axis=0).any(axis=1)
             if temporal_missing_a[0] or temporal_missing_a[-1]:
                 train_data_a = centerize_vary_length_series(train_data_a)
-            train_data_a = train_data_a[~np.isnan(train_data_a).all(axis=2).all(axis=1)]
+            train_data_a = train_data_a[~np.isnan(train_data_a).all(axis=3).all(axis=2).all(axis=1)]
             # converting the medications to a tensor type from numpy type
             train_data_a = torch.from_numpy(train_data_a).to(torch.float)
             optimizer_a = torch.optim.AdamW(self._net_a.parameters(), lr=self.lr)

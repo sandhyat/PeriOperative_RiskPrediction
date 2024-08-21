@@ -49,6 +49,7 @@ if __name__ == '__main__':
     parser.add_argument('--outcome', type=str, required=True, help='The postoperative outcome of interest')
     parser.add_argument('--all_rep', action='store_true', help='Whether to use the representation of all the modalities of only that of time series (flow and meds); to be used with very rare outcomes such as PE or pulm')
     parser.add_argument('--medid_embed_dim', type=int, default=5, help="Dimension to which medid is embedded to before final representations are learnt using ts2vec.")
+    parser.add_argument('--alertid_embed_dim', type=int, default=50, help="Dimension to which alert id is embedded to before final representations are learnt using ts2vec.")
     parser.add_argument('--gpu', type=int, default=0, help='The gpu no. used for training and inference (defaults to 0)')
     parser.add_argument('--batch-size', type=int, default=8, help='The batch size (defaults to 8)')
     parser.add_argument('--lr', type=float, default=0.001, help='The learning rate (defaults to 0.001)')
@@ -279,6 +280,7 @@ if __name__ == '__main__':
             else:
                 config = dict(
                     medid_embed_dim=args.medid_embed_dim,
+                    alertID_embed_dim=args.alertid_embed_dim,
                     batch_size=args.batch_size,
                     lr=args.lr,
                     output_dims_f=args.repr_dims_f,
@@ -331,6 +333,9 @@ if __name__ == '__main__':
 
             if 'alerts' in modality_to_use:
                 config['alert_dim'] = proc_modality_dict_train['alerts'].shape[-1]
+                output_file_name = datadir + 'alertsCombID_map.json'
+                with open(output_file_name) as outfile:  alert_idmap = json.load(outfile)
+                config['alert_Ids'] = len(alert_idmap)
 
             if 'preops_l' in modality_to_use:
                 proc_modality_dict_train['preops_l'] = torch.tensor(proc_modality_dict_train['preops_l'], dtype=torch.float)

@@ -717,51 +717,110 @@ def load_epic(outcome, modality_to_uselist, randomSeed, data_dir, out_dir):  #da
         del train_X_med, test_X_med
 
     if 'alerts' in modality_to_uselist:
+        """
+        In wave 2, following alerts were not in the dictionary: {'antibioticVancom', 'vancomycin', 'antibioticRedose', 'tempHxMH', 'antibioticVancomycin', 'lungCompliance'}
+        Out of these 6, the ones that were observed in a couple of hundred patients are 'lungCompliance', 'antibioticRedose', 'antibioticVancomycin'. So added these to the original dictionary.
+        This action resolves the issue with wave 1 where 'lungCompliance' was not in the data but not in the dictionary.
+        """
 
         alerts = pd.read_csv(data_dir +'epic_alerts.csv')
+        if False:
+            # alerts_dict = pd.ExcelFile(data_dir+'AW_Alerts_Dictionary.xlsx')
+            alerts_dict = pd.read_excel(data_dir+'AW_Alerts_Dictionary.xlsx')
+            alerts_dict = alerts_dict[['atom','id']].dropna().reset_index(drop=True)
+            alerts_dict['comb_id'] = np.arange(len(alerts_dict))+1
+            alerts_dict.at[len(alerts_dict), 'comb_id'] = len(alerts_dict)+1  # this +1 is to account for the fact that
+            alerts_dict_map = dict(zip(alerts_dict['id'], alerts_dict['comb_id']))
+
+            output_file_name = out_dir + '/alertsCombID_map.json'
+            with open(output_file_name, 'w') as outfile: json.dump(alerts_dict_map, outfile)
+
         alerts.drop(alerts[alerts['time'] > 511].index, inplace=True)
         alerts = alerts.merge(new_index, on="orlogid_encoded", how="inner").drop(["orlogid_encoded"], axis=1).rename(
             {"new_person": "person_integer"},
-            axis=1)  # not taking the left because its creating unnecessary nanas that can be possibly handled by the sparse thing
+            axis=1)  # not taking the left because its creating unnecessary nans that can be possibly handled by the sparse thing
+        alerts_df = alerts.drop_duplicates()[['time', 'atom', 'overall_relevant', 'overall_interv', 'person_integer', 'id']]
+        alerts_df = alerts_df.drop_duplicates()
 
-        alerts_df = alerts[['time', 'atom', 'overall_relevant', 'overall_interv', 'person_integer']]
-        # alerts_df_encoded = pd.get_dummies(alerts_df, columns=['atom'], )
-        alert_columns = [i for i in alerts_df if i not in ['person_integer', 'time', 'atom']]
-        for i in alert_columns:
-            alerts_df[i] = alerts_df[i].astype(int)
-        alerts_df = alerts_df.sort_values(by=[
-            'person_integer']).drop_duplicates()  # this is being done because we are not using the alertid which was a subgrouper
+        # adding another column to incorporate the fact that there could be more than one alerts at the same time
+        alerts_df['alert_postn'] = alerts_df.groupby(['person_integer', 'time']).cumcount()
 
+        # dropping the rows where the alert type was any of {'antibioticVancom', 'vancomycin', 'tempHxMH'} because of their low prevalence and not being in the dictionary. Also, because each alert is creating a column here.
+        atomstoDrop = ['antibioticVancom', 'vancomycin', 'tempHxMH']
+        alerts_df = alerts_df.drop(alerts_df[alerts_df.atom.isin(atomstoDrop)].index)
+
+        # creating a combined id for the combination of alert type and the id
+        alerts_df['comb_id'] = alerts_df['id']
+
+        # loading an already saved json file
+        output_file_name = data_dir + 'alertsCombID_map.json'
+        with open(output_file_name) as outfile:  alerts_dict_map = json.load(outfile)
+
+        alerts_df = alerts_df.replace({'comb_id': alerts_dict_map})
+
+
+        alerts_df = alerts_df.drop(columns=['atom', 'id'])
         # need to change the encoding to account for the values which are not present (spike nature kind); in case of one hot encoded its fine because 0 represents not present
+        alerts_df.loc[alerts_df['overall_relevant'] == True, 'overall_relevant'] = 1
+        alerts_df.loc[alerts_df['overall_relevant'] == False, 'overall_relevant'] = -1
         alerts_df.loc[alerts_df['overall_interv'] == 0, 'overall_interv'] = -1
-        alerts_df.loc[alerts_df['overall_relevant'] == 0, 'overall_relevant'] = -1
-        alerts_df = alerts_df.sort_values(by=['person_integer', 'time', 'overall_relevant', 'overall_interv', 'atom'])
-        # alerts_df = alerts_df.drop_duplicates(subset=['person_integer', 'time', 'atom'], keep='last') # this doesn't have any duplicates now and any time point the final decision is used
-        alerts_df = alerts_df.drop_duplicates(subset=['person_integer', 'time'], keep='last').drop(columns=[
-            'atom'])  # this doesn't have any duplicates and at any time point only one alert is being used (the one with positive relevance if present)
-        # need to convert the text to number in the atom columns
-        # from sklearn.preprocessing import LabelEncoder
-        #
-        # le = LabelEncoder()
-        # alerts_df['atom'] = le.fit_transform(alerts_df['atom'])
 
-        # index_alerts = torch.tensor(alerts_df[['person_integer', 'time', 'atom']].values, dtype=int)
-        index_alerts = torch.tensor(alerts_df[['person_integer', 'time']].values, dtype=int)
+        alert_columns = [i for i in alerts_df if i not in ['person_integer', 'time', 'alert_postn']]
+        for i in alert_columns:  alerts_df[i] = alerts_df[i].astype(int)
+
+        index_alerts = torch.tensor(alerts_df[['person_integer', 'time', 'alert_postn']].values, dtype=int)
         value_alerts = torch.tensor(alerts_df[alert_columns].values, dtype=int)
-        # alerts_final_sparse = torch.sparse_coo_tensor(torch.transpose(index_alerts, 0, 1), value_alerts, size=[dense_med_ids.size()[0], alerts_df['time'].max()+1 , len(alerts_df['atom'].unique()), len(alert_columns) ], dtype=torch.int64)
-        alerts_final_sparse = torch.sparse_coo_tensor(torch.transpose(index_alerts, 0, 1), value_alerts,size=[len(combined_case_set), alerts_df['time'].max() + 1, len(alert_columns)], dtype=torch.int64)
+        alerts_final_sparse = torch.sparse_coo_tensor(torch.transpose(index_alerts, 0, 1), value_alerts, size=[len(combined_case_set), 511, alerts_df.alert_postn.max() + 1, len(alert_columns)], dtype=torch.int64)
 
-        train_Xalert = torch.index_select(alerts_final_sparse, 0, torch.tensor(train_index)).coalesce().to_dense().cpu().numpy()
-        test_Xalert = torch.index_select(alerts_final_sparse, 0, torch.tensor(test_index)).coalesce().to_dense().cpu().numpy()
+        if False:
+            # this part is elaborate with each alert as a column. Down the line it would need an embedding layer for each
+            # breakpoint()
 
-        if nan_idx_train.size != 0:
-            train_Xalert = np.delete(train_Xalert, nan_idx_train, axis=0)
-        if nan_idx_test.size != 0:
-            test_Xalert = np.delete(test_Xalert, nan_idx_test, axis=0)
+            alerts_dict['id_map'] = alerts_dict[['id', 'atom']].groupby('atom').cumcount()
+            alerts_dict = alerts_dict[['id', 'atom', 'id_map']]
+            alerts_dict['nan_val'] = 0
+            for i in range(len(alerts_dict)):
+                if not (pd.isna(alerts_dict.iloc[i]['atom'])):
+                    alerts_dict.at[i, 'nan_val'] = alerts_dict.groupby('atom')['id_map'].max()[alerts_dict.iloc[i][
+                        'atom']] + 2  # assigning nan; .at is to assign single cell value for a row/column label pair
+                else:
+                    alerts_dict.at[i, 'nan_val'] = np.nan
+            alerts_dict_map = dict(zip(alerts_dict['id'], alerts_dict['id_map']))
+
+            unique_atoms = list(alerts_df.atom.unique())
+            for atom_val in unique_atoms:
+                alerts_df[atom_val] = alerts_df[alerts_df['atom']==atom_val]['id']
+                alerts_df.replace({atom_val: alerts_dict_map}, inplace=True)
+                alerts_df[atom_val].fillna(alerts_dict[alerts_dict['atom'] == atom_val]['nan_val'].values[0], inplace=True)
+                alerts_dict_map[atom_val + str('.nan')] = alerts_dict[alerts_dict['atom'] == atom_val]['nan_val'].values[0]  # this is for later use to identify the map
+
+            output_file_name = out_dir + 'alertsID_map_' + datetime.now().strftime("%y-%m-%d") + '.json'
+            with open(output_file_name, 'w') as outfile:
+                json.dump(alerts_dict_map, outfile)
+
+            alerts_df = alerts_df.drop(columns=['atom','id'])
+            # need to change the encoding to account for the values which are not present (spike nature kind); in case of one hot encoded its fine because 0 represents not present
+            alerts_df.loc[alerts_df['overall_relevant'] == True, 'overall_relevant'] = 1
+            alerts_df.loc[alerts_df['overall_relevant'] == False, 'overall_relevant'] = -1
+            alerts_df.loc[alerts_df['overall_interv'] == 0, 'overall_interv'] = -1
+
+            alert_columns = [i for i in alerts_df if i not in ['person_integer', 'time','alert_postn']]
+            for i in alert_columns:  alerts_df[i] = alerts_df[i].astype(int)
+
+            # breakpoint()
+
+            index_alerts = torch.tensor(alerts_df[['person_integer', 'time', 'alert_postn']].values, dtype=int)
+            value_alerts = torch.tensor(alerts_df[alert_columns].values, dtype=int)
+            alerts_final_sparse = torch.sparse_coo_tensor(torch.transpose(index_alerts, 0, 1), value_alerts,size=[len(combined_case_set), 511, alerts_df.alert_postn.max() +1, len(alert_columns)], dtype=torch.int64)
+
+        train_Xalert = torch.index_select(alerts_final_sparse, 0, torch.tensor(train_index)).to_dense().cpu().numpy() # this is
+        test_Xalert = torch.index_select(alerts_final_sparse, 0, torch.tensor(test_index)).to_dense().cpu().numpy()
+
+        if nan_idx_train.size != 0: train_Xalert = np.delete(train_Xalert, nan_idx_train, axis=0)
+        if nan_idx_test.size != 0: test_Xalert = np.delete(test_Xalert, nan_idx_test, axis=0)
 
         output_to_return_train['alerts'] = train_Xalert
         output_to_return_test['alerts'] = test_Xalert
-
         del train_Xalert, test_Xalert
 
     if 'postopcomp' in modality_to_uselist:
