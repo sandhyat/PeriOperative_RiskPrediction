@@ -114,8 +114,8 @@ def preprocess_train(preops, data_dir, test_size=0.2):
             binary_variables.append(a)
         # this change in dtype is not possible because there are missing values.
         # Not changing the dtype is not affecting anything down the line because the imputation for ordinal variables is anyway done seperately.
-        # if a in ordinal_variables:
-        #   preops[a] = preops[a].astype('int32')
+        #if a in ordinal_variables:
+        #  preops[a] = preops[a].astype('int32')
         if preops[a].dtype == 'O' and (a not in ordinal_variables+binary_variables+categorical_variables+continuous_variables):
             preops[a] = preops[a].astype('category')
             categorical_variables.append(a)
@@ -229,6 +229,9 @@ def preprocess_train(preops, data_dir, test_size=0.2):
         if np.isnan(preops[i].unique().min()) == True:
             train[i].replace(train[i].unique().min(), train[i].median(), inplace=True)
             test[i].replace(test[i].unique().min(), train[i].median(), inplace=True)
+        if (train[i].dtype == 'O') or (test[i].dtype=='O'):
+            train[i] = train[i].astype('int')
+            test[i] = test[i].astype('int')
 
     meta_Data["train_median_ord"] = [train[i].median() for i in ordinal_variables]
 
@@ -237,8 +240,9 @@ def preprocess_train(preops, data_dir, test_size=0.2):
     normalizing_values_ord["ord_names"] = ordinal_variables
     normalizing_values_ord['mean'] = list(train[ordinal_variables].mean(axis=0).values)
     normalizing_values_ord['std'] = list(train[ordinal_variables].std(axis=0).values)
-    normalizing_values_ord['min'] = list(train[ordinal_variables].min(axis=0).values)
-    normalizing_values_ord['max'] = list(train[ordinal_variables].max(axis=0).values)
+    normalizing_values_ord['min'] = [int(i) for i in train[ordinal_variables].min(axis=0).values]
+    normalizing_values_ord['max'] = [int(i) for i in train[ordinal_variables].max(axis=0).values]
+
 
     train = normalization(train, 'mean_std', normalizing_values_ord, ordinal_variables)
     test = normalization(test, 'mean_std', normalizing_values_ord, ordinal_variables)
@@ -257,7 +261,9 @@ def preprocess_train(preops, data_dir, test_size=0.2):
     meta_Data["continuous_variables"] = continuous_variables
     meta_Data["column_all_names"] = list(preops_ohe.columns)
 
-    output_file_name = '/home/trips/PeriOperative_RiskPrediction/Xgboost_model_Other_flow/preops_metadata_fromflowsheet_imp.json'
+    # output_file_name = '/home/trips/PeriOperative_RiskPrediction/Xgboost_model_Other_flow/preops_metadata_fromflowsheet_imp.json'
+    output_file_name = data_dir+ 'flow_ts/Xgboost_model_Other_flow_wave2/preops_metadata_fromflowsheet_imp.json'
+
     with open(output_file_name, 'w') as outfile:
         json.dump(meta_Data, outfile)
 
@@ -288,10 +294,11 @@ def flowsheet_imputer_estimate_generator_training(first_flow, preops, inp_data_d
         temp_tr_x = preops_other_flow_X.loc[temp_tr_y.index]
         xgb_reg = xgb.XGBRegressor(objective='reg:squarederror').fit(temp_tr_x,temp_tr_y)
         other_flow_est[i] = xgb_reg.predict(preops_ohe.drop(columns=['orlogid_encoded']))
-        xgb_reg.save_model("/home/trips/PeriOperative_RiskPrediction/Xgboost_model_Other_flow/Measure_"+str(i)+".json")
+        # xgb_reg.save_model("/home/trips/PeriOperative_RiskPrediction/Xgboost_model_Other_flow/Measure_"+str(i)+".json")
+        xgb_reg.save_model(inp_data_dir + "flow_ts/Xgboost_model_Other_flow_wave2/Measure_"+str(i)+".json")
 
-    other_flow_est.to_csv("/home/trips/PeriOperative_RiskPrediction/Xgboost_model_Other_flow/Other_flow_0time_imputedvalues.csv")
-
+    # other_flow_est.to_csv("/home/trips/PeriOperative_RiskPrediction/Xgboost_model_Other_flow/Other_flow_0time_imputedvalues.csv")
+    other_flow_est.to_csv(inp_data_dir + "flow_ts/Xgboost_model_Other_flow_wave2/Other_flow_0time_imputedvalues.csv")
     return
 
 # this has a lot of issues so wrote a new function which is cleaner
@@ -474,11 +481,12 @@ def flowsheet_imputation_training_old(very_dense_flow, other_intra_flow_wlabs, i
 def flowsheet_imputation_training(very_dense_flow, other_intra_flow_wlabs, inp_data_dir, imputer_other_flow =None):
     # updated on Aug 5 2024 after discussion with Ryan (about the dense ones) and looking into the isolate inference branch of Epic codes (to confirm that linear innterpolation is not needed in between for other flow)
     # for dense: the output from this file will be coordinate format which will be converted to coo and then to dense and cumsum to ultimately obtain the LOCF verison with the initial values backfill imputed
-    # for other flow: the output of this function will be coordinate format which will be converted to sparse tensors and used as it is. The first value here is either preop predicted or actually recorded.
+    # for other flow: the output of this function will be coordinate format which will be converted to sparse tensors. The first value here is either preop predicted or actually recorded. Even though this could be used as it is in the sparse format, we perform the (cumsum(to_dense)) operation at the batch level in the collate function.
 
     # # reading the imputers
     if (not isinstance(imputer_other_flow, pd.DataFrame)):
-        imputer_other_flow = pd.read_csv(inp_data_dir+ "flow_ts/Xgboost_model_Other_flow/Other_flow_0time_imputedvalues.csv")
+        # imputer_other_flow = pd.read_csv(inp_data_dir+ "flow_ts/Xgboost_model_Other_flow/Other_flow_0time_imputedvalues.csv")
+        imputer_other_flow = pd.read_csv(inp_data_dir+ "flow_ts/Xgboost_model_Other_flow_wave2/Other_flow_0time_imputedvalues.csv")
 
     """ OTHER FLOW DATA """
     imputer_other_flow_coord = pd.melt(imputer_other_flow, id_vars=['orlogid_encoded'],
@@ -500,8 +508,8 @@ def flowsheet_imputation_training(very_dense_flow, other_intra_flow_wlabs, inp_d
         ], ignore_index=True)
 
     """  Saving the recoded (coordinate format) and imputed data to feather files so that it is easily available """
-    other_intra_flow_wlabs_imputed.to_feather('/home/trips/PeriOperative_RiskPrediction/Imputed_other_flow.feather')
-
+    # other_intra_flow_wlabs_imputed.to_feather('/home/trips/PeriOperative_RiskPrediction/Imputed_other_flow.feather')
+    other_intra_flow_wlabs_imputed.to_feather(inp_data_dir + 'flow_ts/Imputed_other_flow_wave2.feather')
 
     """ VERY DENSE DATA """
     very_dense_flowsheet_measures = list(very_dense_flow.columns)
@@ -525,7 +533,8 @@ def flowsheet_imputation_training(very_dense_flow, other_intra_flow_wlabs, inp_d
     very_dense_flow_coord_with0timeforall = pd.concat([first_rec_index, very_dense_flowsheet_coord_imputed], ignore_index=True)
 
     """  Saving the recoded (coordinate format) and imputed data to feather files so that it is easily available """
-    very_dense_flow_coord_with0timeforall.to_feather('/home/trips/PeriOperative_RiskPrediction/Imputed_very_dense_flow.feather')
+    # very_dense_flow_coord_with0timeforall.to_feather('/home/trips/PeriOperative_RiskPrediction/Imputed_very_dense_flow.feather')
+    very_dense_flow_coord_with0timeforall.to_feather(inp_data_dir + 'flow_ts/Imputed_very_dense_flow_wave2.feather')
 
     end_time = datetime.now()
 
@@ -534,12 +543,16 @@ def flowsheet_imputation_training(very_dense_flow, other_intra_flow_wlabs, inp_d
 
 if False:
     # reading files
+    data_dir = '/mnt/ris/ActFastExports/v1.3.2/'
     # data_dir = '/input/'
     # breakpoint()
 
-    first_imputer_path = data_dir+ "flow_ts/Xgboost_model_Other_flow/Other_flow_0time_imputedvalues.csv"
+    # first_imputer_path = data_dir+ "flow_ts/Xgboost_model_Other_flow/Other_flow_0time_imputedvalues.csv"
+    first_imputer_path = data_dir+ "flow_ts/Xgboost_model_Other_flow_wave2/Other_flow_0time_imputedvalues.csv"
+
     if(not os.path.exists(first_imputer_path)):
-        preops = pd.read_csv(data_dir + 'epic_preop.csv')
+        # preops = pd.read_csv(data_dir + 'epic_preop.csv')
+        preops = pd.read_csv(data_dir + 'epic_preop_wave2.csv')
         # to drop the old pmh and problem list
         to_drop_old_pmh_problist_with_others = ["MentalHistory_anxiety", "MentalHistory_bipolar",
                                                 "MentalHistory_depression",
@@ -557,14 +570,28 @@ if False:
                                                 'RED BLOOD CELLS, URINE', 'URINE BLOOD', 'URINE KETONES',
                                                 'URINE NITRITE',
                                                 'URINE UROBILINOGEN', 'WHITE BLOOD CELLS, URINE']
+        to_drop_old_pmh_problist = ["MentalHistory_anxiety", "MentalHistory_bipolar", "MentalHistory_depression",
+                                    "MentalHistory_schizophrenia", "PNA", "delirium_history", "MentalHistory_adhd",
+                                    "MentalHistory_other", "opioids_count", "total_morphine_equivalent_dose",
+                                    'pre_aki_status', 'preop_ICU', 'preop_los',
+                                    'URINE UROBILINOGEN', 'time_of_day',
+                                    'CLARITY, URINE', 'COLOR, URINE',
+                                    'GLUCOSE, URINE, QUALITATIVE', 'URINE BLOOD', 'URINE KETONES', 'AnestStop']
 
-        preops = preops.drop(columns=to_drop_old_pmh_problist_with_others)
+        # preops = preops.drop(columns=to_drop_old_pmh_problist_with_others)
+        preops = preops.drop(columns=to_drop_old_pmh_problist)
+
         # first values
-        first_flow = feather.read_feather(data_dir + 'flow_ts/first_flow.feather')
+        # first_flow = feather.read_feather(data_dir + 'flow_ts/first_flow.feather')
+        first_flow = feather.read_feather(data_dir + 'flow_ts/first_flow_wave2.feather')
         flowsheet_imputer_estimate_generator_training(first_flow, preops, data_dir)
 
-    very_dense_flow = feather.read_feather(data_dir + 'flow_ts/very_dense_flow.feather')
-    other_intra_flow_wlabs = feather.read_feather(data_dir + 'flow_ts/other_intra_flow_wlabs.feather')
+    # very_dense_flow = feather.read_feather(data_dir + 'flow_ts/very_dense_flow.feather')
+    # other_intra_flow_wlabs = feather.read_feather(data_dir + 'flow_ts/other_intra_flow_wlabs.feather')
+    # other_intra_flow_wlabs.drop(other_intra_flow_wlabs[other_intra_flow_wlabs['timepoint'] < 0].index, inplace=True)
+
+    very_dense_flow = feather.read_feather(data_dir + 'flow_ts/very_dense_flow_wave2.feather')
+    other_intra_flow_wlabs = feather.read_feather(data_dir + 'flow_ts/other_intra_flow_wlabs_wave2.feather')
     other_intra_flow_wlabs.drop(other_intra_flow_wlabs[other_intra_flow_wlabs['timepoint'] < 0].index, inplace=True)
 
     flowsheet_imputation_training(very_dense_flow, other_intra_flow_wlabs, data_dir)
