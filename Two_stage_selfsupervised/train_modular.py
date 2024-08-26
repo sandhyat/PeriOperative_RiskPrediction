@@ -388,14 +388,15 @@ if __name__ == '__main__':
                 else:
                     config['seed_used']= current_seed_val
                 model = MVCL_f_m_sep(device=device,**config)
-                # association_metrics_dict = model.associationBTWalertsANDrestmodalities(proc_modality_dict_test)
+
                 loss_log = model.fit(
                     proc_modality_dict_train,
                     n_epochs=args.epochs,
                     n_iters=args.iters,
                     verbose=True
                 )
-
+                # breakpoint()
+                # association_metrics_dictRel, association_metrics_dictInter = model.associationBTWalertsANDrestmodalities(proc_modality_dict_test)
                 metadata_file = dir_name + '/BestModel_metadata' + str(config['seed_used']) +  '_'+args.outcome + '.json'
                 with open(metadata_file, 'w') as outfile: json.dump(config, outfile)
 

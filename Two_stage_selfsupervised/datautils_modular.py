@@ -725,6 +725,15 @@ def load_epic(outcome, modality_to_uselist, randomSeed, data_dir, out_dir):  #da
 
         alerts = pd.read_csv(data_dir +'epic_alerts.csv')
         if False:
+            alerts = alerts.merge(new_index, on="orlogid_encoded", how="inner")
+            alerts_outcome = alerts.merge(outcome_df, on="orlogid_encoded", how="inner")
+            print(alerts_outcome.groupby(['id','contact'], dropna=False)['outcome'].agg(['mean','count']).head(50))
+            print(alerts_outcome.groupby(['contact'], dropna=False)['outcome'].agg(['mean','count']).head(50))
+            breakpoint()
+
+
+
+        if False:
             # alerts_dict = pd.ExcelFile(data_dir+'AW_Alerts_Dictionary.xlsx')
             alerts_dict = pd.read_excel(data_dir+'AW_Alerts_Dictionary.xlsx')
             alerts_dict = alerts_dict[['atom','id']].dropna().reset_index(drop=True)

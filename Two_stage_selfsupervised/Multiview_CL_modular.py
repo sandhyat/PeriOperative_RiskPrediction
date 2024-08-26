@@ -1196,24 +1196,30 @@ class MVCL_f_m_sep:
 
         if 'alerts' in modalities_selected:
             test_data_a = proc_modality_dict_test['alerts']
-            temporal_missing_a = np.isnan(test_data_a).all(axis=-1).any(axis=0)
+            temporal_missing_a = np.isnan(test_data_a).all(axis=-1).any(axis=0).any(axis=1)
             if temporal_missing_a[0] or temporal_missing_a[-1]:
                 test_data_a = centerize_vary_length_series(test_data_a)
-            test_data_a = test_data_a[~np.isnan(test_data_a).all(axis=2).all(axis=1)]
-            # breakpoint()
+            test_data_a = test_data_a[~np.isnan(test_data_a).all(axis=3).all(axis=2).all(axis=1)]
             if True:
                 test_data_a = torch.from_numpy(test_data_a).to(torch.float).to(device=self.device)
                 timepoint_list = {}
+                timepoint_list_a = {}
                 for i in range(len(test_data_a)):
                     if torch.nonzero(test_data_a[i]).size()[0]>0:
-                        if torch.nonzero(test_data_a[i,:,1]).shape[0] > 1:
-                            timepoint_list[i] = np.random.choice(torch.nonzero(test_data_a[i,:,1]).squeeze().cpu().detach().numpy(), size=1,replace=False)[0]
+                        if torch.nonzero(test_data_a[i,:,:,1]).shape[0] > 1:
+                            randNchoice =  np.random.choice(np.arange(len(torch.nonzero(test_data_a[i,:,:,1]))), size=1,replace=False)[0]
+                            timepoint_list_a[i] = torch.nonzero(test_data_a[i,:,:,1]).squeeze().cpu().detach().numpy()[randNchoice]
+                            timepoint_list[i] = torch.nonzero(test_data_a[i,:,:,1]).squeeze().cpu().detach().numpy()[randNchoice][0]
                         else:
-                            timepoint_list[i] = torch.nonzero(test_data_a[i,:,1]).cpu().detach().numpy()[0][0]
-                test_data_a = test_data_a[list(timepoint_list.keys()),list(timepoint_list.values()), :]
+                            timepoint_list_a[i] = torch.nonzero(test_data_a[i,:,:,1]).cpu().detach().numpy()[0]
+                            timepoint_list[i] = torch.nonzero(test_data_a[i,:,:,1]).cpu().detach().numpy()[0][0]
+                samplewithalerts = [val for val in timepoint_list_a.keys()]
+                timevals = [val[0] for val in timepoint_list_a.values()]
+                alertpos = [val[1] for val in timepoint_list_a.values()]
+                test_data_aSelected = test_data_a[samplewithalerts,timevals, alertpos,:]
+                # test_data_a = test_data_a[list(timepoint_list_a.keys()),list(timepoint_list.values()), :,:]
             else:
-                test_data_a = test_data_a.sum(axis=1)  # this is being done to eliminate the time dimension that is not present in the other representations
-
+                test_data_aSelected = test_data_a.sum(axis=1)  # this is being done to eliminate the time dimension that is not present in the other representations
         proj_list = []
         if 'flow' in modalities_selected:
             test_data_f = proc_modality_dict_test['flow']
@@ -1372,14 +1378,13 @@ class MVCL_f_m_sep:
         predictors = torch.zeros(proj_list[0].shape).numpy()
         for i in range(len(proj_list)): predictors = predictors + proj_list[i]
         print(predictors.shape)
-
         if True:
-            labels = test_data_a.cpu().detach().numpy()[:,-1]
+            labels = test_data_aSelected.cpu().detach().numpy()
             labels[labels==-1]=0  # this is being done to make it convenient for the xgbt classifier
-            all_data = np.concatenate([predictors,labels.reshape(len(labels),1)], axis=1)
+            all_data = np.concatenate([predictors,labels], axis=1)
         else:
             # fitting a regression model to see the predictive power of the representation for alertsn
-            all_data = np.concatenate([predictors,test_data_a[:,-1].reshape(len(test_data_a),1)], axis=1)
+            all_data = np.concatenate([predictors,test_data_aSelected[:,-1].reshape(len(test_data_aSelected),1)], axis=1)
         shuffle_index = torch.randperm(n=all_data.shape[0]).numpy()
         all_data1 = all_data[shuffle_index]
 
@@ -1396,12 +1401,24 @@ class MVCL_f_m_sep:
         if True:
             if True:
                 xgb_model = xgb.XGBClassifier()
-                clf1 =  GridSearchCV(xgb_model,{"max_depth": [4, 6], "n_estimators": [50, 100, 200], "learning_rate": [0.01, 0.1, 1.0]}, cv=3,verbose=1)
-                # clf1 = GridSearchCV(xgb_model,{"max_depth": [4], "n_estimators": [50], "learning_rate": [0.01]}, cv=2,verbose=1)
-                # this random 2 fit cv's result : {'outcome_rate_test': 0.15615141, 'acc': 0.832807570977918, 'auprc': 0.1930787457986194, 'auroc': 0.5944397243462665, 'train_sample_size': 2536, 'test_sample_size': 634}
-                clf1.fit(train_all[:, :-1], train_all[:, -1])
-                pred_y_test = clf1.best_estimator_.predict_proba(test_all[:, :-1])
-                acc = clf1.score(test_all[:, :-1], test_all[:,-1])
+                xgb_model_alertid = xgb.XGBClassifier(objective='multi:softmax')
+                clf1_overall_rel =  GridSearchCV(xgb_model,{"max_depth": [4, 6], "n_estimators": [50, 100, 200], "learning_rate": [0.01, 0.1, 1.0]}, cv=3,verbose=1)
+                clf1_overall_int =  GridSearchCV(xgb_model,{"max_depth": [4, 6], "n_estimators": [50, 100, 200], "learning_rate": [0.01, 0.1, 1.0]}, cv=3,verbose=1)
+                clf1_overall_alertid =  GridSearchCV(xgb_model_alertid,{"max_depth": [4, 6], "n_estimators": [50, 100, 200], "learning_rate": [0.01, 0.1, 1.0]}, cv=3,verbose=1)
+
+                clf1_overall_rel.fit(train_all[:, :-3], train_all[:, -3])
+                pred_y_test_oRel = clf1_overall_rel.best_estimator_.predict_proba(test_all[:, :-3])
+                acc_oRel = clf1_overall_rel.score(test_all[:, :-3], test_all[:,-3])
+
+                clf1_overall_int.fit(train_all[:, :-3], train_all[:, -2])
+                pred_y_test_oInter = clf1_overall_int.best_estimator_.predict_proba(test_all[:, :-3])
+                acc_oInter = clf1_overall_int.score(test_all[:, :-3], test_all[:,-2])
+
+                # TODO: the alert association part by predicting alert id in a multiclass setup
+                # clf1_overall_alertid.fit(train_all[:, :-3], train_all[:, -1])
+                # pred_y_test_AlertId = clf1_overall_alertid.best_estimator_.predict_proba(test_all[:, :-3])
+                # acc_AlertId = clf1_overall_alertid.score(test_all[:, :-3], test_all[:,-1])
+
             else:
                 xgb_model = xgb.XGBRegressor(random_state=42)
                 reg1 = GridSearchCV(xgb_model,{"max_depth": [4, 6], "n_estimators": [50, 100, 200], "learning_rate": [0.01, 0.1, 1.0]}, cv=3,verbose=1,)
@@ -1420,9 +1437,13 @@ class MVCL_f_m_sep:
                 pred_y_test = reg.predict(test_all[:, :-1])
 
         if True:
-            auprc = average_precision_score(np.array(test_all[:,-1]), np.array(pred_y_test)[:, 1])
-            auroc = roc_auc_score(np.array(test_all[:,-1]), np.array(pred_y_test)[:, 1])
-            alerts_vs_repr_dict = {'outcome_rate_test':test_all[:,-1].mean(), 'acc': acc, 'auprc': auprc, 'auroc': auroc, 'train_sample_size':len(train_all), 'test_sample_size':len(test_all)}
+            auprc_oRel = average_precision_score(np.array(test_all[:,-3]), np.array(pred_y_test_oRel)[:, 1])
+            auroc_oRel = roc_auc_score(np.array(test_all[:,-3]), np.array(pred_y_test_oRel)[:, 1])
+            alerts_vs_repr_dict_oRel = {'outcome_rate_test':test_all[:,-3].mean(), 'acc': acc_oRel, 'auprc': auprc_oRel, 'auroc': auroc_oRel, 'train_sample_size':len(train_all), 'test_sample_size':len(test_all)}
+
+            auprc_oInter = average_precision_score(np.array(test_all[:,-2]), np.array(pred_y_test_oInter)[:, 1])
+            auroc_oInter = roc_auc_score(np.array(test_all[:,-2]), np.array(pred_y_test_oInter)[:, 1])
+            alerts_vs_repr_dict_oInter = {'outcome_rate_test':test_all[:,-2].mean(), 'acc': acc_oInter, 'auprc': auprc_oInter, 'auroc': auroc_oInter, 'train_sample_size':len(train_all), 'test_sample_size':len(test_all)}
         else:
             # this is for the earlier method which uses all the methods
             corr_value = np.round(pearsonr(np.array(test_all[:,-1]), np.array(pred_y_test))[0], 3)
@@ -1432,5 +1453,7 @@ class MVCL_f_m_sep:
             print(" Value of R2 ", r2value)
             alerts_vs_repr_dict = {'corr':corr_value, 'corr_p_value':cor_p_value, 'r2_value':r2value, 'train_sample_size':len(train_all), 'test_sample_size':len(test_all)}
 
-        print(alerts_vs_repr_dict)
-        return alerts_vs_repr_dict
+        print(" Association between representation and overall relevance \n", alerts_vs_repr_dict_oRel)
+        print(" Association between representation and overall intervention \n",alerts_vs_repr_dict_oInter)
+
+        return alerts_vs_repr_dict_oRel, alerts_vs_repr_dict_oInter
