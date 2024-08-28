@@ -15,14 +15,14 @@ if [ $# -eq 0 ]; then
     exit 1
 fi
 
-pip install optuna
+#pip install optuna
 #pip install pytorch-tabnet
 #pip uninstall pandas
-pip install pandas==1.5.3
+#pip install pandas==1.5.3
 
 numbers=($(shuf -i 100-500 -n 5))
 
-export CUDA_VISIBLE_DEVICES=1
+#export CUDA_VISIBLE_DEVICES=1
 
 for number in "${numbers[@]}"
 do
