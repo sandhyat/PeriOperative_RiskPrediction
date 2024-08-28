@@ -16,6 +16,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import roc_auc_score, average_precision_score, confusion_matrix, roc_curve, precision_recall_curve, \
     RocCurveDisplay, PrecisionRecallDisplay, confusion_matrix, r2_score
+from scipy.stats.stats import pearsonr
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from tqdm.auto import tqdm
@@ -26,7 +27,7 @@ import sys, argparse
 import scipy
 from datetime import datetime
 import json
-from pytorch_tabnet.tab_model import TabNetClassifier
+from pytorch_tabnet.tab_model import TabNetClassifier, TabNetRegressor
 import pickle
 
 
@@ -89,7 +90,9 @@ end_of_case_times = outcomes[['orlogid_encoded', 'endtime']]
 
 # end_of_case_times = feather.read_feather(data_dir + 'end_of_case_times.feather')
 regression_outcome_list = ['postop_los', 'survival_time', 'readmission_survival', 'total_blood', 'postop_Vent_duration', 'n_glu_high',
-                           'low_sbp_time','aoc_low_sbp', 'low_relmap_time', 'low_relmap_aoc', 'low_map_time', 'low_map_aoc', 'timew_pain_avg_0', 'median_pain_0', 'worst_pain_0', 'worst_pain_1']
+                           'low_sbp_time','aoc_low_sbp', 'low_relmap_time', 'low_relmap_aoc', 'low_map_time',
+                           'low_map_aoc', 'timew_pain_avg_0', 'median_pain_0', 'worst_pain_0', 'worst_pain_1',
+                           'opioids_count_day0', 'opioids_count_day1']
 binary_outcome = args.task not in regression_outcome_list
 
 
@@ -191,7 +194,7 @@ combined_case_set = list(set(outcome_df["orlogid_encoded"].values).intersection(
     set(end_of_case_times['orlogid_encoded'].values)).intersection(
     set(preops['orlogid_encoded'].values)))
 
-if False:
+if True:
     combined_case_set = np.random.choice(combined_case_set, 5000, replace=False)
 
 outcome_df = outcome_df.loc[outcome_df['orlogid_encoded'].isin(combined_case_set)]
@@ -305,7 +308,11 @@ else:
 outcome_with_pred_test = outcome_df.iloc[test_index]
 outcome_with_pred_test =  outcome_with_pred_test.rename(columns = {'outcome':'y_true'})
 
-perf_metric = np.zeros((len(best_5_random_number), 2)) # 2 is for the metrics auroc and auprc
+if binary_outcome:
+    perf_metric = np.zeros((len(best_5_random_number), 2)) # 2 is for the metrics auroc and auprc
+else:
+    perf_metric = np.zeros((len(best_5_random_number), 5)) # 5 is for the metrics corr, corr_p, R2, MAE, MSE
+
 for runNum in range(len(best_5_random_number)):
 
     # starting time of the run
@@ -392,7 +399,7 @@ for runNum in range(len(best_5_random_number)):
 
         features = list(preops_tr.columns)
 
-        if True:
+        if eval(args.bestModel) ==True:
             # this was done post facto
             tabnet_featureorder = {}
             tabnet_featureorder['all_feat']=features
@@ -401,7 +408,7 @@ for runNum in range(len(best_5_random_number)):
             tabnet_featureorder['cat_var']=categorical_columns
             tabnet_featureorder['n_col_unique']=nunique.to_dict()
 
-            output_file_name = dir_name + 'tabnet_feat_' + str(task) + '.pickle'
+            output_file_name = dir_name + 'tabnet_feat_' + str(args.task) + '.pickle'
             with open(output_file_name, 'wb') as outfile: pickle.dump(tabnet_featureorder, outfile)
 
         cat_idxs = [colname for colname, f in enumerate(features) if f in categorical_columns]
@@ -556,7 +563,10 @@ for runNum in range(len(best_5_random_number)):
         tabnet_params['gamma'] = param_values['gamma']
         tabnet_params['mask_type'] = param_values['mask_type']
 
-    clf = TabNetClassifier(**tabnet_params)
+    if binary_outcome:
+        clf = TabNetClassifier(**tabnet_params)
+    else:
+        regr = TabNetRegressor(**tabnet_params)
 
     X_train = train_data
     y_train = outcome_df.iloc[train_index]["outcome"].values
@@ -574,7 +584,7 @@ for runNum in range(len(best_5_random_number)):
         virtual_batch_size = param_values['virtual_batch_size']
     else:
         max_epochs = 50 if not os.getenv("CI", False) else 2
-        patience = 20
+        patience = 15
         batch_size = 1024
         virtual_batch_size = 128
 
@@ -583,28 +593,69 @@ for runNum in range(len(best_5_random_number)):
     sparse_X_valid = scipy.sparse.csr_matrix(X_valid)  # Create a CSR matrix from X_valid
 
     # Fitting the model
-    clf.fit(
-        X_train=sparse_X_train, y_train=y_train,
-        eval_set=[(sparse_X_train, y_train), (sparse_X_valid, y_valid)],
-        eval_name=['train', 'valid'],
-        eval_metric=['auc'],
-        max_epochs=max_epochs , patience=patience,
-        batch_size=batch_size, virtual_batch_size=virtual_batch_size,
-        num_workers=0,
-        weights=1,
-        drop_last=False,
-    )
+    if binary_outcome:
+        clf.fit(
+            X_train=sparse_X_train, y_train=y_train,
+            eval_set=[(sparse_X_train, y_train), (sparse_X_valid, y_valid)],
+            eval_name=['train', 'valid'],
+            eval_metric=['auc'],
+            max_epochs=max_epochs , patience=patience,
+            batch_size=batch_size, virtual_batch_size=virtual_batch_size,
+            num_workers=0,
+            weights=1,
+            drop_last=False,
+        )
 
-    preds = clf.predict_proba(X_test)
-    test_auroc = roc_auc_score(y_score=preds[:,1], y_true=y_test)
-    test_auprc = average_precision_score(y_score=preds[:,1], y_true=y_test)
+        preds = clf.predict_proba(X_test)
+        test_auroc = roc_auc_score(y_score=preds[:, 1], y_true=y_test)
+        test_auprc = average_precision_score(y_score=preds[:, 1], y_true=y_test)
 
-    perf_metric[runNum, 0] = test_auroc
-    perf_metric[runNum, 1] = test_auprc
+        perf_metric[runNum, 0] = test_auroc
+        perf_metric[runNum, 1] = test_auprc
+
+    else:
+        regr.fit(
+            X_train=sparse_X_train, y_train=y_train.reshape(-1,1),
+            eval_set=[(sparse_X_train, y_train.reshape(-1,1)), (sparse_X_valid, y_valid.reshape(-1,1))],
+            eval_name=['train', 'valid'],
+            eval_metric=['mse'],
+            max_epochs=max_epochs, patience=patience,
+            batch_size=batch_size, virtual_batch_size=virtual_batch_size,
+            num_workers=0,
+            drop_last=False,
+        )
+
+        preds = regr.predict(X_test)
+        breakpoint()
+        #TODO: fix the nan here
+        corr_value = np.round(pearsonr(np.array(y_test), np.array(preds))[0], 3)
+        cor_p_value = np.round(pearsonr(np.array(y_test), np.array(preds))[1], 3)
+        print(str(args.task) + " prediction with correlation ", corr_value, ' and corr p value of ', cor_p_value)
+        r2value = r2_score(np.array(y_test), np.array(preds))  # inbuilt function also exists for R2
+        print(" Value of R2 ", r2value)
+        temp_df = pd.DataFrame(columns=['true_value', 'pred_value'])
+        temp_df['true_value'] = np.array(y_test)
+        temp_df['pred_value'] = np.array(preds)
+        temp_df['abs_diff'] = abs(temp_df['true_value'] - temp_df['pred_value'])
+        temp_df['sqr_diff'] = (temp_df['true_value'] - temp_df['pred_value']) * (
+                temp_df['true_value'] - temp_df['pred_value'])
+        mae_full = np.round(temp_df['abs_diff'].mean(), 3)
+        mse_full = np.round(temp_df['sqr_diff'].mean(), 3)
+        print("MAE on the test set ", mae_full)
+        print("MSE on the test set ", mse_full)
+
+        perf_metric[runNum, 0] = corr_value
+        perf_metric[runNum, 1] = cor_p_value
+        perf_metric[runNum, 2] = r2value
+        perf_metric[runNum, 3] = mae_full
+        perf_metric[runNum, 4] = mse_full
 
     if eval(args.bestModel) == True:
         saving_path_name = dir_name + 'BestModel_' + str(int(best_5_random_number[runNum])) + "_" + modal_name
-        saved_filepath = clf.save_model(saving_path_name)
+        if binary_outcome:
+            saved_filepath = clf.save_model(saving_path_name)
+        else:
+            saved_filepath = regr.save_model(saving_path_name)
 
         best_dict_local['randomSeed'] = int(best_5_random_number[runNum])
         best_dict_local['run_number'] = runNum
@@ -615,34 +666,42 @@ for runNum in range(len(best_5_random_number)):
         best_dict_local['valid_orlogids'] = outcome_df.iloc[valid_index]["orlogid_encoded"].values.tolist()
         best_dict_local['test_orlogids'] = outcome_df.iloc[test_index]["orlogid_encoded"].values.tolist()
         best_dict_local['model_file_path'] = saving_path_name
-        best_dict_local['outcome_rate'] = np.round(outcome_df.iloc[test_index]["outcome"].mean(), decimals=4)
         # this is saving the true and predicted y for each run because the test set is the same
-        outcome_with_pred_test['y_pred_' + str(int(best_5_random_number[runNum]))] = preds[:, 1]
+        if binary_outcome:
+            best_dict_local['outcome_rate'] = np.round(outcome_df.iloc[test_index]["outcome"].mean(), decimals=4)
+            outcome_with_pred_test['y_pred_' + str(int(best_5_random_number[runNum]))] = preds[:, 1]
+        else:
+            outcome_with_pred_test['y_pred_' + str(int(best_5_random_number[runNum]))] = preds
         dict_key ='run_randomSeed_'+str(int(best_5_random_number[runNum])) # this is so dumb because it wont take the key dynamically
         best_metadata_dict[dict_key] = best_dict_local
 
+    if binary_outcome:
+        preds_valid = clf.predict_proba(X_valid)
+        valid_auc = roc_auc_score(y_score=preds_valid[:,1], y_true=y_valid)
 
-    preds_valid = clf.predict_proba(X_valid)
-    valid_auc = roc_auc_score(y_score=preds_valid[:,1], y_true=y_valid)
+        print(f"BEST VALID SCORE FOR : {clf.best_cost}")
+        print(f"FINAL TEST AUROC FOR : {np.round(test_auroc, 4)}")
+        print(f"FINAL TEST AUPRC FOR : {np.round(test_auprc, 4)}")
 
-    print(f"BEST VALID SCORE FOR : {clf.best_cost}")
-    print(f"FINAL TEST AUROC FOR : {np.round(test_auroc, 4)}")
-    print(f"FINAL TEST AUPRC FOR : {np.round(test_auprc, 4)}")
+        print(" Number of epochs that ran ", max_epochs)
+        # print("Test AUROC and AUPRC values are ", np.round(test_auroc, 4), np.round(test_auprc, 4))
+        fpr_roc, tpr_roc, thresholds_roc = roc_curve(y_test, preds[:,1], drop_intermediate=False)
+        precision_prc, recall_prc, thresholds_prc = precision_recall_curve(y_test, preds[:,1])
+        # interpolation in ROC
+        mean_fpr = np.linspace(0, 1, 100)
+        tpr_inter = np.interp(mean_fpr, fpr_roc, tpr_roc)
+        mean_fpr = np.round(mean_fpr, decimals=2)
+        print("Sensitivity at 90%  specificity is ", np.round(tpr_inter[np.where(mean_fpr == 0.10)], 2))
 
-    print(" Number of epochs that ran ", max_epochs)
-    # print("Test AUROC and AUPRC values are ", np.round(test_auroc, 4), np.round(test_auprc, 4))
-    fpr_roc, tpr_roc, thresholds_roc = roc_curve(y_test, preds[:,1], drop_intermediate=False)
-    precision_prc, recall_prc, thresholds_prc = precision_recall_curve(y_test, preds[:,1])
-    # interpolation in ROC
-    mean_fpr = np.linspace(0, 1, 100)
-    tpr_inter = np.interp(mean_fpr, fpr_roc, tpr_roc)
-    mean_fpr = np.round(mean_fpr, decimals=2)
-    print("Sensitivity at 90%  specificity is ", np.round(tpr_inter[np.where(mean_fpr == 0.10)], 2))
-
-    if args.task=='endofcase':
-        outcome_rate = 0.5  # this is hardcoded here
+        if args.task=='endofcase':
+            outcome_rate = 0.5  # this is hardcoded here
+        else:
+            outcome_rate = np.round(outcome_df.iloc[test_index]["outcome"].mean(), decimals=4)
     else:
-        outcome_rate = np.round(outcome_df.iloc[test_index]["outcome"].mean(), decimals=4)
+        preds_valid = regr.predict(X_valid)
+
+        print(f"BEST VALID SCORE : {regr.best_cost}")
+        print(f"FINAL TEST R2 : {np.round(r2value, 4)}")
 
     end_time = datetime.now()  # only writing part is remaining in the code to time
     timetaken = end_time-start_time
