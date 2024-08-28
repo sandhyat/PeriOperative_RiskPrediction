@@ -409,6 +409,7 @@ def objective(trial, args):
         preds_valid = clf.predict(valid_data)
         r2value = r2_score(np.array(y_valid), np.array(preds_valid))  # inbuilt function also exists for R2
         valid_metric = r2value
+        print(" Value of R2 for the validation set", r2value)
 
     return valid_metric
 
@@ -459,15 +460,15 @@ if __name__ == "__main__":
 
     trial_summary_df = study.trials_dataframe()  # this
 
-    hpcsv = os.path.join('/output/', std_name+ datetime.now().strftime("%y-%m-%d-%H:%M:%S") + "_HP_df.csv")
+    hpcsv = os.path.join('/output/HP_output/', std_name+ datetime.now().strftime("%y-%m-%d") + "_HP_df.csv")
     trial_summary_df.to_csv(hpcsv, header=True, index=False)
 
     best_Trial_metadata={}
     best_Trial_metadata['params'] =study.best_params
     # best_Trial_metadata['trial'] = study.best_trial
     best_Trial_metadata['value'] = study.best_value
-    # best_trial_file_name = '/output/Best_trial_result' + std_name + datetime.now().strftime("%y-%m-%d-%H:%M:%S")+'.txt' # frozentrial is not serializable so can't save it. The ideal way would be to use optuna storage but for not using this.
-    best_trial_file_name = '/output/Best_trial_result' + std_name + datetime.now().strftime("%y-%m-%d-%H:%M:%S")+'.json' # frozentrial is not serializable so can't save it.
+    # best_trial_file_name = '/output/HP_output/Best_trial_result' + std_name + datetime.now().strftime("%y-%m-%d-%H:%M:%S")+'.txt' # frozentrial is not serializable so can't save it. The ideal way would be to use optuna storage but for not using this.
+    best_trial_file_name = '/output/HP_output/Best_trial_result' + std_name + datetime.now().strftime("%y-%m-%d")+'.json' # frozentrial is not serializable so can't save it.
 
 
     # with open(best_trial_file_name, 'w') as f: print(best_Trial_metadata, file=f)

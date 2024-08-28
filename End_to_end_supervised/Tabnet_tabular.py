@@ -626,10 +626,8 @@ for runNum in range(len(best_5_random_number)):
         )
 
         preds = regr.predict(X_test)
-        breakpoint()
-        #TODO: fix the nan here
-        corr_value = np.round(pearsonr(np.array(y_test), np.array(preds))[0], 3)
-        cor_p_value = np.round(pearsonr(np.array(y_test), np.array(preds))[1], 3)
+        corr_value = np.round(pearsonr(np.array(y_test.reshape(-1,1)), np.array(preds))[0], 3)
+        cor_p_value = np.round(pearsonr(np.array(y_test.reshape(-1,1)), np.array(preds))[1], 3)
         print(str(args.task) + " prediction with correlation ", corr_value, ' and corr p value of ', cor_p_value)
         r2value = r2_score(np.array(y_test), np.array(preds))  # inbuilt function also exists for R2
         print(" Value of R2 ", r2value)
@@ -637,15 +635,14 @@ for runNum in range(len(best_5_random_number)):
         temp_df['true_value'] = np.array(y_test)
         temp_df['pred_value'] = np.array(preds)
         temp_df['abs_diff'] = abs(temp_df['true_value'] - temp_df['pred_value'])
-        temp_df['sqr_diff'] = (temp_df['true_value'] - temp_df['pred_value']) * (
-                temp_df['true_value'] - temp_df['pred_value'])
+        temp_df['sqr_diff'] = (temp_df['true_value'] - temp_df['pred_value']) * (temp_df['true_value'] - temp_df['pred_value'])
         mae_full = np.round(temp_df['abs_diff'].mean(), 3)
         mse_full = np.round(temp_df['sqr_diff'].mean(), 3)
         print("MAE on the test set ", mae_full)
         print("MSE on the test set ", mse_full)
 
-        perf_metric[runNum, 0] = corr_value
-        perf_metric[runNum, 1] = cor_p_value
+        perf_metric[runNum, 0] = corr_value[0]
+        perf_metric[runNum, 1] = cor_p_value[0]
         perf_metric[runNum, 2] = r2value
         perf_metric[runNum, 3] = mae_full
         perf_metric[runNum, 4] = mse_full

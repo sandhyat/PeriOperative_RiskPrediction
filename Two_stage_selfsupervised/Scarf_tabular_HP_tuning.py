@@ -13,9 +13,10 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import (ConfusionMatrixDisplay, classification_report,
                              confusion_matrix)
-from sklearn.metrics import average_precision_score, roc_auc_score
+from sklearn.metrics import average_precision_score, roc_auc_score, r2_score
 from sklearn.model_selection import train_test_split, GridSearchCV
-from xgboost import XGBClassifier
+from scipy.stats.stats import pearsonr
+from xgboost import XGBClassifier, XGBRegressor
 import optuna
 from optuna.trial import TrialState
 # from End_to_end_supervised.Preops_processing import preprocess_train
@@ -65,7 +66,8 @@ def objective(trial, args):
     regression_outcome_list = ['postop_los', 'survival_time', 'readmission_survival', 'total_blood',
                                'postop_Vent_duration', 'n_glu_high',
                                'low_sbp_time', 'aoc_low_sbp', 'low_relmap_time', 'low_relmap_aoc', 'low_map_time',
-                               'low_map_aoc', 'timew_pain_avg_0', 'median_pain_0', 'worst_pain_0', 'worst_pain_1']
+                               'low_map_aoc', 'timew_pain_avg_0', 'median_pain_0', 'worst_pain_0', 'worst_pain_1',
+                               'opioids_count_day0', 'opioids_count_day1']
     binary_outcome = args.task not in regression_outcome_list
 
     outcomes = outcomes.dropna(subset=['ICU'])
@@ -451,16 +453,27 @@ def objective(trial, args):
     learning_rate = trial.suggest_float("learningRate", 1e-5, 1e-1, log=True)
     n_estimators = trial.suggest_int("n_estimators", 50, 250)
 
-    clf = XGBClassifier(n_estimators=n_estimators, max_depth=max_depth, reg_lambda=reg_lambda, reg_alpha=reg_alpha, learning_rate=learning_rate, random_state=args.randomSeed)
-    clf.fit(train_embeddings, y_train)
+    if binary_outcome:
+        clf = XGBClassifier(n_estimators=n_estimators, max_depth=max_depth, reg_lambda=reg_lambda, reg_alpha=reg_alpha, learning_rate=learning_rate, random_state=args.randomSeed)
+        clf.fit(train_embeddings, y_train)
 
-    preds_valid = clf.predict_proba(valid_embeddings)
-    valid_auroc = roc_auc_score(y_score=preds_valid[:, 1], y_true=y_valid)
-    valid_auprc = average_precision_score(y_score=preds_valid[:, 1], y_true=y_valid)
+        preds_valid = clf.predict_proba(valid_embeddings)
+        valid_auroc = roc_auc_score(y_score=preds_valid[:, 1], y_true=y_valid)
+        valid_auprc = average_precision_score(y_score=preds_valid[:, 1], y_true=y_valid)
+        valid_metric = valid_auroc
 
-    print('AUROC and AUPRC for the validation set', valid_auroc, valid_auprc)
+        print('AUROC and AUPRC for the validation set', valid_auroc, valid_auprc)
+    else:
+        regr = XGBRegressor(n_estimators=n_estimators, max_depth=max_depth, reg_lambda=reg_lambda, reg_alpha=reg_alpha, learning_rate=learning_rate, random_state=args.randomSeed)
+        regr.fit(train_embeddings, y_train)
 
-    return valid_auroc
+        preds_valid = regr.predict(valid_embeddings)
+        r2value = r2_score(np.array(y_valid), np.array(preds_valid))  # inbuilt function also exists for R2
+        valid_metric = r2value
+
+        print(" Value of R2 for the validation set", r2value)
+
+    return valid_metric
 
 
 if __name__ == "__main__":
@@ -500,7 +513,7 @@ if __name__ == "__main__":
 
     std_name = str(args_input.task)+"_"+str(args_input.modelType)+modalities_to_add +"_"+str(args_input.randomSeed) +"_"
     study = optuna.create_study(direction="maximize", study_name=std_name)
-    study.set_metric_names(["Validation_set_auroc"])
+    study.set_metric_names(["Validation_set_aurocOrR2"])
 
     study.optimize(lambda trial: objective(trial, args_input), n_trials=args_input.numtrialsHP, gc_after_trial=True)
 
@@ -509,7 +522,7 @@ if __name__ == "__main__":
 
     trial_summary_df = study.trials_dataframe()  # this
 
-    hpcsv = os.path.join('/output/', std_name+ datetime.now().strftime("%y-%m-%d-%H:%M:%S") + "_HP_df.csv")
+    hpcsv = os.path.join('/output/HP_output/', std_name+ datetime.now().strftime("%y-%m-%d") + "_HP_df.csv")
     trial_summary_df.to_csv(hpcsv, header=True, index=False)
 
     best_Trial_metadata={}
@@ -517,8 +530,8 @@ if __name__ == "__main__":
     # best_Trial_metadata['trial'] = study.best_trial
     best_Trial_metadata['value'] = study.best_value
 
-    # best_trial_file_name = '/output/Best_trial_result' + std_name + datetime.now().strftime("%y-%m-%d-%H:%M:%S")+'.txt' # frozentrial is not serializable so can't save it. The ideal way would be to use optuna storage but for not using this.
-    best_trial_file_name = '/output/Best_trial_result' + std_name + datetime.now().strftime("%y-%m-%d-%H:%M:%S")+'.json' # frozentrial is not serializable so can't save it.
+    # best_trial_file_name = '/output/HP_output/Best_trial_result' + std_name + datetime.now().strftime("%y-%m-%d")+'.txt' # frozentrial is not serializable so can't save it. The ideal way would be to use optuna storage but for not using this.
+    best_trial_file_name = '/output/HP_output/Best_trial_result' + std_name + datetime.now().strftime("%y-%m-%d")+'.json' # frozentrial is not serializable so can't save it.
 
 
     # with open(best_trial_file_name, 'w') as f: print(best_Trial_metadata, file=f)
