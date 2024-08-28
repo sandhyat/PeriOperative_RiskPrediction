@@ -205,7 +205,7 @@ def objective(trial, args):
     features = []
     if 'preops' not in modality_to_use:
         test_size = 0.2
-        valid_size = 0.05  # change back to 0.00005 for the full dataset
+        valid_size = 0.00005  # change back to 0.00005 for the full dataset
         y_outcome = outcome_df["outcome"].values
         preops.reset_index(drop=True, inplace=True)
         upto_test_idx = int(test_size * len(preops))
