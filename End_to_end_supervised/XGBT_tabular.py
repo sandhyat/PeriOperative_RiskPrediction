@@ -8,7 +8,8 @@ import torch
 from sklearn.metrics import roc_auc_score, average_precision_score, confusion_matrix, roc_curve, precision_recall_curve, \
     RocCurveDisplay, PrecisionRecallDisplay, confusion_matrix, r2_score
 from sklearn.model_selection import train_test_split, GridSearchCV
-from xgboost import XGBClassifier
+from scipy.stats.stats import pearsonr
+from xgboost import XGBClassifier, XGBRegressor
 import sys, argparse
 import json
 from datetime import datetime
@@ -74,7 +75,9 @@ end_of_case_times = outcomes[['orlogid_encoded', 'endtime']]
 
 # end_of_case_times = feather.read_feather(data_dir + 'end_of_case_times.feather')
 regression_outcome_list = ['postop_los', 'survival_time', 'readmission_survival', 'total_blood', 'postop_Vent_duration', 'n_glu_high',
-                           'low_sbp_time','aoc_low_sbp', 'low_relmap_time', 'low_relmap_aoc', 'low_map_time', 'low_map_aoc', 'timew_pain_avg_0', 'median_pain_0', 'worst_pain_0', 'worst_pain_1']
+                           'low_sbp_time','aoc_low_sbp', 'low_relmap_time', 'low_relmap_aoc', 'low_map_time',
+                           'low_map_aoc', 'timew_pain_avg_0', 'median_pain_0', 'worst_pain_0', 'worst_pain_1',
+                           'opioids_count_day0', 'opioids_count_day1']
 binary_outcome = args.task not in regression_outcome_list
 
 
@@ -243,8 +246,10 @@ if 'problist' in modality_to_use:
 
 best_5_random_number = []  # this will take the args when directly run otherwise it will read the number from the file namee
 if eval(args.bestModel) ==True:
-    path_to_dir = '/home/trips/PeriOperative_RiskPrediction/HP_output/'
-    sav_dir = '/home/trips/PeriOperative_RiskPrediction/Best_results/Preoperative/'
+    # path_to_dir = '/home/trips/PeriOperative_RiskPrediction/HP_output/'
+    # sav_dir = '/home/trips/PeriOperative_RiskPrediction/Best_results/Preoperative/'
+    path_to_dir = '../HP_output/'
+    sav_dir = '../Best_results/Preoperative/'
     # best_file_name= path_to_dir + 'Best_trial_resulticu_TabNet_modal__preops_cbow_pmh_problist_homemeds174_24-07-17-10:55:55.json'
     file_names = os.listdir(path_to_dir)
     import re
@@ -286,11 +291,14 @@ else:
     best_5_random_number.append(args.randomSeed)
     hm_reading_form = args.home_medsform
 
-
 outcome_with_pred_test = outcome_df.iloc[test_index]
 outcome_with_pred_test =  outcome_with_pred_test.rename(columns = {'outcome':'y_true'})
 
-perf_metric = np.zeros((len(best_5_random_number), 2)) # 2 is for the metrics auroc and auprc
+if binary_outcome:
+    perf_metric = np.zeros((len(best_5_random_number), 2)) # 2 is for the metrics auroc and auprc
+else:
+    perf_metric = np.zeros((len(best_5_random_number), 5)) # 5 is for the metrics corr, corr_p, R2, MAE, MSE
+
 for runNum in range(len(best_5_random_number)):
 
     # starting time of the run
@@ -320,7 +328,7 @@ for runNum in range(len(best_5_random_number)):
     features = []
     if 'preops' not in modality_to_use:
         test_size = 0.2
-        valid_size = 0.05  # change back to 0.00005 for the full dataset
+        valid_size = 0.00005  # change back to 0.00005 for the full dataset
         y_outcome = outcome_df["outcome"].values
         preops.reset_index(drop=True, inplace=True)
         upto_test_idx = int(test_size * len(preops))
@@ -356,7 +364,7 @@ for runNum in range(len(best_5_random_number)):
                                                                                                                    outcome_df[
                                                                                                                        "outcome"].values,
                                                                                                                    binary_outcome=binary_outcome,
-                                                                                                                   valid_size=0.00005, random_state=int(best_5_random_number[runNum]), input_dr=data_dir, output_dr=out_dir)  # change back to 0.00005
+                                                                                                                   valid_size=valid_size, random_state=int(best_5_random_number[runNum]), input_dr=data_dir, output_dr=out_dir)  # change back to 0.00005
 
         if args.task == 'icu':  # this part is basically dropping the planned icu cases from the evaluation set
             test_index = preops.iloc[test_index][preops.iloc[test_index]['plannedDispo'] != 'ICU']['plannedDispo'].index
@@ -489,25 +497,64 @@ for runNum in range(len(best_5_random_number)):
 
 
     if eval(args.bestModel) ==True:
+        if(binary_outcome):
+            clf = XGBClassifier(max_depth=param_values['max_depth'], reg_lambda=param_values['reg_lambda'], reg_alpha=param_values['reg_alpha'],
+                                learning_rate=param_values['learningRate'], random_state=int(best_5_random_number[runNum]), n_estimators=param_values['n_estimators'])
+            clf.fit(train_data, y_train)
 
-        clf = XGBClassifier(max_depth=param_values['max_depth'], reg_lambda=param_values['reg_lambda'], reg_alpha=param_values['reg_alpha'],
-                            learning_rate=param_values['learningRate'], random_state=int(best_5_random_number[runNum]), n_estimators=param_values['n_estimators'])
-        clf.fit(train_data, y_train)
+            preds = clf.predict_proba(test_data)
+        else:
+            regr = XGBRegressor(max_depth=param_values['max_depth'], reg_lambda=param_values['reg_lambda'],
+                                reg_alpha=param_values['reg_alpha'],
+                                learning_rate=param_values['learningRate'],
+                                random_state=int(best_5_random_number[runNum]),
+                                n_estimators=param_values['n_estimators'])
+            regr.fit(train_data, y_train)
 
-        preds = clf.predict_proba(test_data)
+            preds = regr.predict(test_data)
     else:
-        xgb_model = XGBClassifier(random_state=int(best_5_random_number[runNum]))
-        clf = GridSearchCV(xgb_model,{"max_depth": [4, 6], "n_estimators": [50, 100, 200], "learning_rate": [0.01, 0.1, 1.0]}, cv=3,verbose=1,)
-        clf.fit(train_data, y_train)
+        if(binary_outcome):
+            xgb_model = XGBClassifier(random_state=int(best_5_random_number[runNum]))
+            clf = GridSearchCV(xgb_model,{"max_depth": [4, 6], "n_estimators": [50, 100, 200], "learning_rate": [0.01, 0.1, 1.0]}, cv=3,verbose=1,)
+            clf.fit(train_data, y_train)
 
-        preds = clf.best_estimator_.predict_proba(test_data)
-        preds_tr = clf.best_estimator_.predict_proba(train_data)
+            preds = clf.best_estimator_.predict_proba(test_data)
+            preds_tr = clf.best_estimator_.predict_proba(train_data)
+        else:
+            xgb_model = XGBRegressor(random_state=int(best_5_random_number[runNum]))
+            regr = GridSearchCV(xgb_model,{"max_depth": [4, 6], "n_estimators": [50, 100, 200], "learning_rate": [0.01, 0.1, 1.0]}, cv=3,verbose=1,)
+            regr.fit(train_data, y_train)
 
-    test_auroc = roc_auc_score(y_test, preds[:, 1])
-    test_auprc = average_precision_score(y_test, preds[:, 1])
+            preds = regr.best_estimator_.predict(test_data)
+            preds_tr = regr.best_estimator_.predict(train_data)
+    if (binary_outcome):
+        test_auroc = roc_auc_score(y_test, preds[:, 1])
+        test_auprc = average_precision_score(y_test, preds[:, 1])
 
-    perf_metric[runNum, 0] = test_auroc
-    perf_metric[runNum, 1] = test_auprc
+        perf_metric[runNum, 0] = test_auroc
+        perf_metric[runNum, 1] = test_auprc
+    else:
+        corr_value = np.round(pearsonr(np.array(y_test), np.array(preds))[0], 3)
+        cor_p_value = np.round(pearsonr(np.array(y_test), np.array(preds))[1], 3)
+        print(str(args.task) + " prediction with correlation ", corr_value, ' and corr p value of ', cor_p_value)
+        r2value = r2_score(np.array(y_test), np.array(preds))  # inbuilt function also exists for R2
+        print(" Value of R2 ", r2value)
+        temp_df = pd.DataFrame(columns=['true_value', 'pred_value'])
+        temp_df['true_value'] = np.array(y_test)
+        temp_df['pred_value'] = np.array(preds)
+        temp_df['abs_diff'] = abs(temp_df['true_value'] - temp_df['pred_value'])
+        temp_df['sqr_diff'] = (temp_df['true_value'] - temp_df['pred_value']) * (
+                temp_df['true_value'] - temp_df['pred_value'])
+        mae_full = np.round(temp_df['abs_diff'].mean(), 3)
+        mse_full = np.round(temp_df['sqr_diff'].mean(), 3)
+        print("MAE on the test set ", mae_full)
+        print("MSE on the test set ", mse_full)
+
+        perf_metric[runNum, 0] = corr_value
+        perf_metric[runNum, 1] = cor_p_value
+        perf_metric[runNum, 2] = r2value
+        perf_metric[runNum, 3] = mae_full
+        perf_metric[runNum, 4] = mse_full
 
     if eval(args.bestModel) == True:
         # saving the feature name order and the training csv that was used to train the best model
@@ -516,7 +563,10 @@ for runNum in range(len(best_5_random_number)):
             txt_to_write.write(str(features))
 
         saving_path_name = dir_name +  'XGBT_BestModel_' + str(int(best_5_random_number[runNum])) + "_" + modal_name + ".json"
-        clf.save_model(saving_path_name)
+        if binary_outcome:
+            clf.save_model(saving_path_name)
+        else:
+            regr.save_model(saving_path_name)
 
         best_dict_local['randomSeed'] = int(best_5_random_number[runNum])
         best_dict_local['task'] = str(args.task)
@@ -527,29 +577,34 @@ for runNum in range(len(best_5_random_number)):
         best_dict_local['valid_orlogids'] = outcome_df.iloc[valid_index]["orlogid_encoded"].values.tolist()
         best_dict_local['test_orlogids'] = outcome_df.iloc[test_index]["orlogid_encoded"].values.tolist()
         best_dict_local['model_file_path'] = saving_path_name
-        best_dict_local['outcome_rate'] = np.round(outcome_df.iloc[test_index]["outcome"].mean(), decimals=4)
         # this is saving the true and predicted y for each run because the test set is the same
-        outcome_with_pred_test['y_pred_' + str(int(best_5_random_number[runNum]))] = preds[:, 1]
+        if binary_outcome:
+            best_dict_local['outcome_rate'] = np.round(outcome_df.iloc[test_index]["outcome"].mean(), decimals=4)
+            outcome_with_pred_test['y_pred_' + str(int(best_5_random_number[runNum]))] = preds[:, 1]
+        else:
+            outcome_with_pred_test['y_pred_' + str(int(best_5_random_number[runNum]))] = preds
         dict_key ='run_randomSeed_'+str(int(best_5_random_number[runNum])) # this is so dumb because it wont take the key dynamically
         best_metadata_dict[dict_key] = best_dict_local
 
-    fpr_roc, tpr_roc, thresholds_roc = roc_curve(y_test, preds[:,1], drop_intermediate=False)
-    precision_prc, recall_prc, thresholds_prc = precision_recall_curve(y_test, preds[:,1])
-    # interpolation in ROC
-    mean_fpr = np.linspace(0, 1, 100)
-    tpr_inter = np.interp(mean_fpr, fpr_roc, tpr_roc)
-    mean_fpr = np.round(mean_fpr, decimals=2)
-    print("Sensitivity at 90%  specificity is ", np.round(tpr_inter[np.where(mean_fpr == 0.10)], 2))
+    if binary_outcome:
+        fpr_roc, tpr_roc, thresholds_roc = roc_curve(y_test, preds[:,1], drop_intermediate=False)
+        precision_prc, recall_prc, thresholds_prc = precision_recall_curve(y_test, preds[:,1])
+        # interpolation in ROC
+        mean_fpr = np.linspace(0, 1, 100)
+        tpr_inter = np.interp(mean_fpr, fpr_roc, tpr_roc)
+        mean_fpr = np.round(mean_fpr, decimals=2)
+        print("Sensitivity at 90%  specificity is ", np.round(tpr_inter[np.where(mean_fpr == 0.10)], 2))
 
-    if args.task=='endofcase':
-        outcome_rate = 0.5  # this is hardcoded here
-    else:
-        outcome_rate = np.round(outcome_df.iloc[test_index]["outcome"].mean(), decimals=4)
+        if args.task=='endofcase':
+            outcome_rate = 0.5  # this is hardcoded here
+        else:
+            outcome_rate = np.round(outcome_df.iloc[test_index]["outcome"].mean(), decimals=4)
 
     end_time = datetime.now()  # only writing part is remaining in the code to time
     timetaken = end_time-start_time
     print("time taken to finish run number ", runNum, " is ", timetaken)
 
+breakpoint()
 print("Tranquila")
 
 # saving metadata for all best runs in json; decided to save it also as pickle because the nested datatypes were not letting it be serializable

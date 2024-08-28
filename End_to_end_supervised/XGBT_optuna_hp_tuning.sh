@@ -15,7 +15,7 @@ if [ $# -eq 0 ]; then
     exit 1
 fi
 
-export CUDA_VISIBLE_DEVICES=1
+#export CUDA_VISIBLE_DEVICES=1
 
 numbers=($(shuf -i 100-500 -n 5))
 
