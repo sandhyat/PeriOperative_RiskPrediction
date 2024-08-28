@@ -7,7 +7,8 @@ import torch
 from sklearn.metrics import roc_auc_score, average_precision_score, confusion_matrix, roc_curve, precision_recall_curve, \
     RocCurveDisplay, PrecisionRecallDisplay, confusion_matrix, r2_score
 from sklearn.model_selection import train_test_split, GridSearchCV
-from xgboost import XGBClassifier
+from scipy.stats.stats import pearsonr
+from xgboost import XGBClassifier, XGBRegressor
 import sys, argparse
 import json
 from datetime import datetime
@@ -51,7 +52,8 @@ def objective(trial, args):
     regression_outcome_list = ['postop_los', 'survival_time', 'readmission_survival', 'total_blood',
                                'postop_Vent_duration', 'n_glu_high',
                                'low_sbp_time', 'aoc_low_sbp', 'low_relmap_time', 'low_relmap_aoc', 'low_map_time',
-                               'low_map_aoc', 'timew_pain_avg_0', 'median_pain_0', 'worst_pain_0', 'worst_pain_1']
+                               'low_map_aoc', 'timew_pain_avg_0', 'median_pain_0', 'worst_pain_0', 'worst_pain_1',
+                               'opioids_count_day0', 'opioids_count_day1']
     binary_outcome = args.task not in regression_outcome_list
 
     outcomes = outcomes.dropna(subset=['ICU'])
@@ -389,17 +391,26 @@ def objective(trial, args):
         device_available = torch.device("cpu")
 
     # the usage of device here not an efficient solution. Ideally I should be using a cupy library to move the numpy to cuda device so that both the data and classifier are on the same device.
-    # However, XGB internally does this part which could be slow. TODO: for future implementaion
-    clf = XGBClassifier(n_estimators=n_estimators, max_depth=max_depth, reg_lambda=reg_lambda, reg_alpha=reg_alpha, learning_rate=learning_rate, random_state=args.randomSeed, device=device_available)
-    clf.fit(train_data, y_train)
+    # However, XGB internally does this part which could be slow. TODO: for future implementation
+    if binary_outcome:
+        clf = XGBClassifier(n_estimators=n_estimators, max_depth=max_depth, reg_lambda=reg_lambda, reg_alpha=reg_alpha, learning_rate=learning_rate, random_state=args.randomSeed, device=device_available)
+        clf.fit(train_data, y_train)
 
-    preds_valid = clf.predict_proba(valid_data)
-    valid_auroc = roc_auc_score(y_score=preds_valid[:, 1], y_true=y_valid)
-    valid_auprc = average_precision_score(y_score=preds_valid[:, 1], y_true=y_valid)
+        preds_valid = clf.predict_proba(valid_data)
+        valid_auroc = roc_auc_score(y_score=preds_valid[:, 1], y_true=y_valid)
+        valid_auprc = average_precision_score(y_score=preds_valid[:, 1], y_true=y_valid)
+        valid_metric = valid_auroc
 
-    print('AUROC and AUPRC for the validation set', valid_auroc, valid_auprc)
+        print('AUROC and AUPRC for the validation set', valid_auroc, valid_auprc)
+    else:
+        clf = XGBRegressor(n_estimators=n_estimators, max_depth=max_depth, reg_lambda=reg_lambda, reg_alpha=reg_alpha, learning_rate=learning_rate, random_state=args.randomSeed, device=device_available)
+        clf.fit(train_data, y_train)
 
-    return valid_auroc
+        preds_valid = clf.predict(valid_data)
+        r2value = r2_score(np.array(y_valid), np.array(preds_valid))  # inbuilt function also exists for R2
+        valid_metric = r2value
+
+    return valid_metric
 
 
 if __name__ == "__main__":
@@ -439,7 +450,7 @@ if __name__ == "__main__":
 
     std_name = str(args_input.task)+"_"+str(args_input.modelType)+modalities_to_add +str(args_input.randomSeed) +"_"
     study = optuna.create_study(direction="maximize", study_name=std_name)
-    study.set_metric_names(["Validation_set_auroc"])
+    study.set_metric_names(["Validation_set_aurocOrR2"])
 
     study.optimize(lambda trial: objective(trial, args_input), n_trials=args_input.numtrialsHP, gc_after_trial=True)
 
