@@ -15,7 +15,8 @@ import ast
 from sklearn.metrics import roc_auc_score, average_precision_score, confusion_matrix, roc_curve, precision_recall_curve, \
     RocCurveDisplay, PrecisionRecallDisplay, confusion_matrix, r2_score
 from sklearn.model_selection import train_test_split, GridSearchCV
-from xgboost import XGBClassifier
+from scipy.stats.stats import pearsonr
+from xgboost import XGBClassifier, XGBRegressor
 import sys, argparse
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 import json
@@ -27,7 +28,7 @@ from Two_stage_selfsupervised.tasks.scarf_model_updated import *
 import scipy
 from datetime import datetime
 import json
-from pytorch_tabnet.tab_model import TabNetClassifier
+from pytorch_tabnet.tab_model import TabNetClassifier, TabNetRegressor
 import pickle
 
 parser = argparse.ArgumentParser(description='Tabular modular model validation in wave2')
@@ -88,14 +89,16 @@ outcomes_wave2 = outcomes_wave2.dropna(subset=['ICU'])
 
 
 regression_outcome_list = ['postop_los', 'survival_time', 'readmission_survival', 'total_blood', 'postop_Vent_duration', 'n_glu_high',
-                           'low_sbp_time','aoc_low_sbp', 'low_relmap_time', 'low_relmap_aoc', 'low_map_time', 'low_map_aoc', 'timew_pain_avg_0', 'median_pain_0', 'worst_pain_0', 'worst_pain_1']
+                           'low_sbp_time','aoc_low_sbp', 'low_relmap_time', 'low_relmap_aoc', 'low_map_time',
+                           'low_map_aoc', 'timew_pain_avg_0', 'median_pain_0', 'worst_pain_0', 'worst_pain_1',
+                           'opioids_count_day0', 'opioids_count_day1']
 binary_outcome = args.task not in regression_outcome_list
 binary_outcome_list = ['UTI', 'CVA', 'PNA', 'PE', 'DVT', 'AF', 'arrest', 'VTE', 'GI', 'SSI', 'pulm', 'cardiac', 'postop_trop_crit', 'postop_trop_high', 'post_dialysis', 'n_glucose_low']
 
 
-if task in ['postop_del', 'severe_present_1', 'worst_pain_1', 'worst_pain_0']:
+if args.task in ['postop_del', 'severe_present_1', 'worst_pain_1', 'worst_pain_0']:
     # dropping the nans for postop_del and severe_present_1. Can't wait until later as these need to be converted into integer
-    outcomes_wave2 = outcomes_wave2.dropna(subset=[task])
+    outcomes_wave2 = outcomes_wave2.dropna(subset=[args.task])
 
 # outcome
 icu_outcome = outcomes_wave2[['orlogid_encoded', 'ICU']]
@@ -109,17 +112,17 @@ mortality_outcome.loc[mortality_outcome['death_in_30'] == False, 'death_in_30'] 
 mortality_outcome['death_in_30'] = mortality_outcome['death_in_30'].astype(int)
 
 
-if task in ['aki1', 'aki2', 'aki3']:
+if args.task in ['aki1', 'aki2', 'aki3']:
     outcomes_wave2 = outcomes_wave2.dropna(subset=['post_aki_status'])
     aki_outcome = outcomes_wave2[['orlogid_encoded', 'post_aki_status']]
-    if task == 'aki1':
+    if args.task == 'aki1':
         aki_outcome.loc[aki_outcome['post_aki_status'] >= 1, 'post_aki_status'] = 1
         aki_outcome.loc[aki_outcome['post_aki_status'] < 1, 'post_aki_status'] = 0
-    if task == 'aki2':
+    if args.task == 'aki2':
         aki_outcome.loc[aki_outcome[
                             'post_aki_status'] < 2, 'post_aki_status'] = 0  # the order matters here otherwise everything will bbecome zero :(; there is aone liner too that can be used
         aki_outcome.loc[aki_outcome['post_aki_status'] >= 2, 'post_aki_status'] = 1
-    if task == 'aki3':
+    if args.task == 'aki3':
         aki_outcome.loc[aki_outcome[
                             'post_aki_status'] < 3, 'post_aki_status'] = 0  # the order matters here otherwise everything will bbecome zero :(; there is aone liner too that can be used
         aki_outcome.loc[aki_outcome['post_aki_status'] == 3, 'post_aki_status'] = 1
@@ -127,7 +130,7 @@ if task in ['aki1', 'aki2', 'aki3']:
 
 dvt_pe_outcome = outcomes_wave2[['orlogid_encoded', 'DVT_PE']]
 
-if task in regression_outcome_list:
+if args.task in regression_outcome_list:
     outcomes_wave2['survival_time'] = np.minimum(outcomes_wave2['survival_time'], 90)
     # outcomes['readmission_survival'] = np.minimum(outcomes['readmission_survival'], 30) # this is being commented because we are going to predict everything as regression and then evaluate as classification by thresholding at 30
     # outcomes['n_glucose_high'] = outcomes['n_glucose_high'].fillna(0)  # this might not be needed as already taken of by the where statement
@@ -142,32 +145,32 @@ if task in regression_outcome_list:
     # outcomes['low_map_aoc'] = np.where(outcomes['total_t'] > 0, outcomes['low_map_aoc']/outcomes['total_t'], 0)
     # outcomes['postop_vent_duration'] = outcomes['postop_vent_duration'].fillna(0)
 
-    outcome_df_wave2 = outcomes_wave2[['orlogid_encoded', task]]
-elif task in binary_outcome_list:
-    if task == 'VTE':
+    outcome_df_wave2 = outcomes_wave2[['orlogid_encoded', args.task]]
+elif args.task in binary_outcome_list:
+    if args.task == 'VTE':
         temp_outcome = outcomes_wave2[['orlogid_encoded']]
-        temp_outcome[task] = np.where(outcomes_wave2['DVT'] == True, 1, 0) + np.where(outcomes_wave2['PE'] == True, 1, 0)
-        temp_outcome.loc[temp_outcome[task] == 2, task] = 1    # not the most efficient but spent more time than it needed
-    elif task in  ['n_glucose_low', 'n_glu_high', 'low_sbp_time']:  # the threshold of 0 for low_sbp_time was decided as the 75th percentile (outcomes_wave2[task].describe()['75%'])
-        temp_outcome = outcomes_wave2[['orlogid_encoded', task]]
-        temp_outcome[task] = temp_outcome[task].fillna(0)
-        temp_outcome[task] = np.where(temp_outcome[task]>0, 1, 0)
-    elif task in ['worst_pain_1', 'worst_pain_0']:
-        temp_outcome = outcomes_wave2[['orlogid_encoded', task]]
-        temp_outcome[task] = np.where(temp_outcome[task]>=7, 1, 0)
+        temp_outcome[args.task] = np.where(outcomes_wave2['DVT'] == True, 1, 0) + np.where(outcomes_wave2['PE'] == True, 1, 0)
+        temp_outcome.loc[temp_outcome[args.task] == 2, args.task] = 1    # not the most efficient but spent more time than it needed
+    elif args.task in  ['n_glucose_low', 'n_glu_high', 'low_sbp_time']:  # the threshold of 0 for low_sbp_time was decided as the 75th percentile (outcomes_wave2[args.task].describe()['75%'])
+        temp_outcome = outcomes_wave2[['orlogid_encoded', args.task]]
+        temp_outcome[args.task] = temp_outcome[args.task].fillna(0)
+        temp_outcome[args.task] = np.where(temp_outcome[args.task]>0, 1, 0)
+    elif args.task in ['worst_pain_1', 'worst_pain_0']:
+        temp_outcome = outcomes_wave2[['orlogid_encoded', args.task]]
+        temp_outcome[args.task] = np.where(temp_outcome[args.task]>=7, 1, 0)
     else:
-        temp_outcome = outcomes_wave2[['orlogid_encoded', task]]
-        temp_outcome.loc[temp_outcome[task] == True, task] = 1
-        temp_outcome.loc[temp_outcome[task] == False, task] = 0
-    temp_outcome[task] = temp_outcome[task].astype(int)
+        temp_outcome = outcomes_wave2[['orlogid_encoded', args.task]]
+        temp_outcome.loc[temp_outcome[args.task] == True, args.task] = 1
+        temp_outcome.loc[temp_outcome[args.task] == False, args.task] = 0
+    temp_outcome[args.task] = temp_outcome[args.task].astype(int)
     outcome_df_wave2 = temp_outcome
-elif (task == 'dvt_pe'):
+elif (args.task == 'dvt_pe'):
     outcome_df_wave2 = dvt_pe_outcome
-elif (task == 'icu'):
+elif (args.task == 'icu'):
     outcome_df_wave2 = icu_outcome
-elif (task == 'mortality'):
+elif (args.task == 'mortality'):
     outcome_df_wave2 = mortality_outcome
-elif (task == 'aki1' or task == 'aki2' or task == 'aki3'):
+elif (args.task == 'aki1' or args.task == 'aki2' or args.task == 'aki3'):
     outcome_df_wave2 = aki_outcome
 else:
     raise Exception("outcome not handled")
@@ -179,12 +182,11 @@ preops_wave2 = preops_wave2.drop(columns=to_drop_old_pmh_problist)
 preops_wave2 = preops_wave2.drop(index = preops_wave2[preops_wave2['age']<18].index)
 
 
-
-if task == 'icu':  # this part is basically dropping the planned icu cases from the evaluation set
+if args.task == 'icu':  # this part is basically dropping the planned icu cases from the evaluation set
     sub_id = preops_wave2[preops_wave2['plannedDispo']!='ICU'].index
     preops_wave2 = preops_wave2.loc[sub_id]
 
-if task == 'post_dialysis':
+if args.task == 'post_dialysis':
     sub_id = preops_wave2[(preops_wave2['ESRD'] != 1) & (preops_wave2['Dialysis'] != 1)].index   # dropping every row in which at least one value is 1
     preops_wave2 = preops_wave2[(preops_wave2['ESRD'] != 1) & (preops_wave2['Dialysis'] != 1)]
 
@@ -255,9 +257,9 @@ file_names = os.listdir(sav_dir)
 
 
 
-output_file_name = sav_dir + 'preops_metadata_' + str(task) + '.json'
+output_file_name = sav_dir + 'preops_metadata_' + str(args.task) + '.json'
 
-# output_file_name = './preops_metadata' + str(task) + '.json'
+# output_file_name = './preops_metadata' + str(args.task) + '.json'
 md_f = open(output_file_name)
 metadata = json.load(md_f)
 
@@ -295,7 +297,7 @@ for m_name in model_list:
         types = preops_wave2_t.dtypes
 
 
-        output_file_name = dir_name + 'tabnet_feat_' + str(task) + '.pickle'
+        output_file_name = dir_name + 'tabnet_feat_' + str(args.task) + '.pickle'
         with open(output_file_name, 'rb') as file: metadata_features = pickle.load(file)
 
 
@@ -320,7 +322,7 @@ for m_name in model_list:
             preops_wave2_t[col] = max(list(categorical_val_map[col].values()))
 
     if m_name=='Scarf':
-        output_file_name = dir_name + 'scarf_feat_' + str(task) + '.json'
+        output_file_name = dir_name + 'scarf_feat_' + str(args.task) + '.json'
         md_features = open(output_file_name)
         metadata_features = json.load(md_features)
 
@@ -332,7 +334,10 @@ for m_name in model_list:
 
     best_5_random_number = [int(num.split("_")[-1]) for num in list(existing_data.keys())]
 
-    perf_metric = np.zeros((len(best_5_random_number), 2))  # 2 is for the metrics auroc and auprc
+    if binary_outcome:
+        perf_metric = np.zeros((len(best_5_random_number), 2))  # 2 is for the metrics auroc and auprc
+    else:
+        perf_metric = np.zeros((len(best_5_random_number), 5))  # 5 is for the metrics corr, corr_p, R2, MAE, MSE
 
     for runNum in range(len(best_5_random_number)):
 
@@ -380,12 +385,18 @@ for m_name in model_list:
             if (sum(test_data.isna().any()) > 0):  # this means that the column overlap between two waves is not full (mainly the homemeds as each homemed is a column)
                 test_data.fillna(0, inplace=True)
             saving_path_name = dir_name + 'XGBT_BestModel_' + str(int(best_5_random_number[runNum])) + "_" + modal_name + ".json"
-            model = XGBClassifier()
+            if binary_outcome:
+                model = XGBClassifier()
+            else:
+                model = XGBRegressor()
             model.load_model(saving_path_name)
 
             # prediction on the loaded model
-            pred_y_test = model.predict_proba(test_data)
-            pred_y_test = pred_y_test[:, 1]
+            if binary_outcome:
+                pred_y_test = model.predict_proba(test_data)
+                pred_y_test = pred_y_test[:, 1]
+            else:
+                pred_y_test = model.predict(test_data)
 
         if m_name =='TabNet':
             saved_filepath = dir_name + 'BestModel_' + str(int(best_5_random_number[runNum])) + "_" + modal_name +".zip"
@@ -393,12 +404,18 @@ for m_name in model_list:
             tabnet_params = existing_data['run_randomSeed_' + str(int(best_5_random_number[runNum]))]['model_params']
             test_data = pd.concat(test_set, axis=1)
 
-            loaded_clf = TabNetClassifier()
+            if binary_outcome:
+                loaded_clf = TabNetClassifier()
+            else:
+                loaded_clf = TabNetRegressor()
             loaded_clf.load_model(saved_filepath)
             # for i in range(len(loaded_clf.cat_idxs)): print(test_data.columns[loaded_clf.cat_idxs[i]], loaded_clf.cat_dims[i], len(np.unique(test_data1[:,loaded_clf.cat_idxs[i]])))
 
-            pred_y_test = loaded_clf.predict_proba(test_data.values)
-            pred_y_test = pred_y_test[:, 1]
+            if binary_outcome:
+                pred_y_test = loaded_clf.predict_proba(test_data.values)
+                pred_y_test = pred_y_test[:, 1]
+            else:
+                pred_y_test = loaded_clf.predict(test_data.values)
 
         if m_name=='Scarf':
             if 'pmh' in modality_to_use:
@@ -436,21 +453,51 @@ for m_name in model_list:
 
             ## TODO: this xgb model is performing really bad in most cases. An alternative would be to train xgb on the test embeddings directly and report the performance.
             saving_xgb_file_name = dir_name + 'XGBT_BestModel_' + str(int(best_5_random_number[runNum])) + "_" + modal_name + ".json"
-            model_xgb = XGBClassifier()
+            if binary_outcome:
+                model_xgb = XGBClassifier()
+            else:
+                model_xgb = XGBRegressor()
             model_xgb.load_model(saving_xgb_file_name)
 
             # prediction on the loaded model
-            pred_y_test = model_xgb.predict_proba(test_embeddings)
-            pred_y_test = pred_y_test[:, 1]
+            if binary_outcome:
+                pred_y_test = model_xgb.predict_proba(test_embeddings)
+                pred_y_test = pred_y_test[:, 1]
+            else:
+                pred_y_test = model_xgb.predict(test_embeddings)
 
+        if binary_outcome:
+            test_auroc = roc_auc_score(y_test, pred_y_test)
+            test_auprc = average_precision_score(y_test, pred_y_test)
 
-        test_auroc = roc_auc_score(y_test, pred_y_test)
-        test_auprc = average_precision_score(y_test, pred_y_test)
+            perf_metric[runNum, 0] = test_auroc
+            perf_metric[runNum, 1] = test_auprc
+        else:
+            corr_value = np.round(pearsonr(np.array(y_test.reshape(-1, 1)), np.array(pred_y_test))[0], 3)
+            cor_p_value = np.round(pearsonr(np.array(y_test.reshape(-1, 1)), np.array(pred_y_test))[1], 3)
+            print(str(args.task) + " prediction with correlation ", corr_value, ' and corr p value of ', cor_p_value)
+            r2value = r2_score(np.array(y_test), np.array(pred_y_test))  # inbuilt function also exists for R2
+            print(" Value of R2 ", r2value)
+            temp_df = pd.DataFrame(columns=['true_value', 'pred_value'])
+            temp_df['true_value'] = np.array(y_test)
+            temp_df['pred_value'] = np.array(pred_y_test)
+            temp_df['abs_diff'] = abs(temp_df['true_value'] - temp_df['pred_value'])
+            temp_df['sqr_diff'] = (temp_df['true_value'] - temp_df['pred_value']) * (
+                        temp_df['true_value'] - temp_df['pred_value'])
+            mae_full = np.round(temp_df['abs_diff'].mean(), 3)
+            mse_full = np.round(temp_df['sqr_diff'].mean(), 3)
+            print("MAE on the test set ", mae_full)
+            print("MSE on the test set ", mse_full)
 
-        perf_metric[runNum, 0] = test_auroc
-        perf_metric[runNum, 1] = test_auprc
+            perf_metric[runNum, 0] = corr_value[0]
+            perf_metric[runNum, 1] = cor_p_value[0]
+            perf_metric[runNum, 2] = r2value
+            perf_metric[runNum, 3] = mae_full
+            perf_metric[runNum, 4] = mse_full
+
         print(perf_metric)
-    print(perf_metric)
+
+    print("Final performance metric", perf_metric)
 
     print(" Model type :", m_name, " Modal name: ", modal_name, "  Finished for wave 2" )
     breakpoint()
