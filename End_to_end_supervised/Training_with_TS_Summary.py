@@ -25,7 +25,7 @@ import pickle
 parser = argparse.ArgumentParser(description='Tabular (preop + Summ TS) modular XGBT model training')
 
 ## modalities to select
-parser.add_argument('--preops', default=True, action='store_true',
+parser.add_argument('--preops', action='store_true',
                     help='Whether to add preops and bow to ts representation')
 parser.add_argument('--pmhProblist', action="store_true", help='Whether to add pmh and problem list ')
 parser.add_argument('--homemeds', action="store_true",
@@ -190,7 +190,7 @@ combined_case_set = list(set(outcome_df["orlogid_encoded"].values).intersection(
     set(end_of_case_times['orlogid_encoded'].values)).intersection(
     set(preops['orlogid_encoded'].values)))
 
-if True:
+if False:
     combined_case_set = np.random.choice(combined_case_set, 5000, replace=False)
 
 outcome_df = outcome_df.loc[outcome_df['orlogid_encoded'].isin(combined_case_set)]
@@ -270,19 +270,20 @@ if 'flow' in modality_to_use:
         other_intra_flow_wlabs['endtime'] > other_intra_flow_wlabs['timepoint']]
     other_intra_flow_wlabs.drop(["endtime"], axis=1, inplace=True)
 
-    breakpoint()
-    very_dense_flow_stat = very_dense_flow.groupby(by=['orlogid_encoded','measure_index'])['VALUE'].agg(['min','max', 'mean', 'var']).reset_index()
-    very_dense_flow_stat['var'].fillna(0, inplace=True)
+    very_dense_flow_stat = very_dense_flow.groupby(by=['orlogid_encoded','measure_index'])['VALUE'].agg(['mean', 'std']).reset_index()
+    very_dense_flow_stat = pd.concat([very_dense_flow_stat, pd.concat([very_dense_flow.groupby(by=['orlogid_encoded','measure_index'])['VALUE'].quantile(0.2).reset_index().rename(columns={'VALUE':'VALUE_20perc'}), very_dense_flow.groupby(by=['orlogid_encoded','measure_index'])['VALUE'].quantile(0.8).reset_index().drop(columns=['orlogid_encoded','measure_index']).rename(columns={'VALUE':'VALUE_80perc'})], axis=1).drop(columns=['orlogid_encoded','measure_index'])], axis =1)
+    very_dense_flow_stat['std'].fillna(0, inplace=True)
     very_dense_flow_stat.measure_index = very_dense_flow_stat['measure_index'].astype('str')
-    very_dense_flow_stat = very_dense_flow_stat.pivot(index='orlogid_encoded', columns='measure_index', values=['min','max', 'mean', 'var']).reset_index()
+    very_dense_flow_stat = very_dense_flow_stat.pivot(index='orlogid_encoded', columns='measure_index', values=['mean', 'std','VALUE_20perc', 'VALUE_80perc']).reset_index()
     very_dense_flow_stat.columns = ['_'.join(col) for col in very_dense_flow_stat.columns]
     temp_name = ['orlogid_encoded'] + [col+"FlowD" for col in very_dense_flow_stat.columns if col not in ['orlogid_encoded_']]
     very_dense_flow_stat.rename(columns = dict(zip(very_dense_flow_stat.columns, temp_name)), inplace =True)
 
-    other_intra_flow_wlabs_stat = other_intra_flow_wlabs.groupby(by=['orlogid_encoded','measure_index'])['VALUE'].agg(['min','max', 'mean', 'var', 'count']).reset_index()
-    other_intra_flow_wlabs_stat['var'].fillna(0, inplace=True)
+    other_intra_flow_wlabs_stat = other_intra_flow_wlabs.groupby(by=['orlogid_encoded','measure_index'])['VALUE'].agg(['mean', 'std']).reset_index()
+    other_intra_flow_wlabs_stat = pd.concat([other_intra_flow_wlabs_stat, pd.concat([other_intra_flow_wlabs.groupby(by=['orlogid_encoded','measure_index'])['VALUE'].quantile(0.2).reset_index().rename(columns={'VALUE':'VALUE_20perc'}), other_intra_flow_wlabs.groupby(by=['orlogid_encoded','measure_index'])['VALUE'].quantile(0.8).reset_index().drop(columns=['orlogid_encoded','measure_index']).rename(columns={'VALUE':'VALUE_80perc'})], axis=1).drop(columns=['orlogid_encoded','measure_index'])], axis =1)
+    other_intra_flow_wlabs_stat['std'].fillna(0, inplace=True)
     other_intra_flow_wlabs_stat.measure_index = other_intra_flow_wlabs_stat['measure_index'].astype('str')
-    other_intra_flow_wlabs_stat = other_intra_flow_wlabs_stat.pivot(index='orlogid_encoded', columns='measure_index', values=['min','max', 'mean', 'var', 'count']).reset_index()
+    other_intra_flow_wlabs_stat = other_intra_flow_wlabs_stat.pivot(index='orlogid_encoded', columns='measure_index', values=['mean', 'std','VALUE_20perc', 'VALUE_80perc']).reset_index()
     other_intra_flow_wlabs_stat.columns  = ['_'.join(col) for col in other_intra_flow_wlabs_stat.columns]
     temp_name = ['orlogid_encoded'] + [col+"FlowS" for col in other_intra_flow_wlabs_stat.columns if col not in ['orlogid_encoded_']]
     other_intra_flow_wlabs_stat.rename(columns = dict(zip(other_intra_flow_wlabs_stat.columns, temp_name)), inplace =True)
@@ -299,7 +300,6 @@ if 'meds' in modality_to_use:
     all_med_data['med_unit_comb'] = list(zip(all_med_data['med_integer'], all_med_data['unit_integer']))
     med_unit_coded, med_unit_unique_codes = pd.factorize(all_med_data['med_unit_comb'])
     all_med_data['med_unit_comb'] = med_unit_coded
-
     all_med_data['dose'] = all_med_data['dose'].astype('float')
     all_med_data_stat = all_med_data.groupby(by=['orlogid_encoded','med_unit_comb'])['dose'].agg(['sum']).reset_index()  # the sum is over the time for each unique med unit combo
     all_med_data_stat.med_unit_comb = all_med_data_stat['med_unit_comb'].astype('str')
@@ -308,11 +308,10 @@ if 'meds' in modality_to_use:
     all_med_data_stat.fillna(0, inplace=True)
     temp_name = ['orlogid_encoded'] + [col+"MedUnit" for col in all_med_data_stat.columns if col not in ['orlogid_encoded_']]
     all_med_data_stat.rename(columns = dict(zip(all_med_data_stat.columns, temp_name)), inplace =True)
-    med_combo_redundant = list(all_med_data_stat.sum(axis=0).sort_values()[:23].index)  # dropping the med unit combo columns that do not have any recorded dosage
+    med_combo_redundant = list(all_med_data_stat.sum(axis=0).sort_values()[all_med_data_stat.sum(axis=0).sort_values() == 0].index)  # dropping the med unit combo columns that do not have any recorded dosage
     all_med_data_stat = all_med_data_stat.drop(columns= med_combo_redundant)
     low_freq_rec = [i for i in all_med_data_stat.columns if np.count_nonzero(all_med_data_stat[i].to_numpy()) < 10] # med unit combo recorded in only a handful of patients
     all_med_data_stat = all_med_data_stat.drop(columns= low_freq_rec)
-
 
 best_5_random_number = []  # this will take the args when directly run otherwise it will read the number from the file namee
 if eval(args.bestModel) ==True:
@@ -558,14 +557,49 @@ for runNum in range(len(best_5_random_number)):
 
     if 'flow' in modality_to_use:
 
+        very_dense_flow_stat = very_dense_flow_stat.merge(new_index, on="orlogid_encoded", how="inner").set_index('new_person').reindex(list(range(preops.index.min(), preops.index.max() + 1)), fill_value=0).reset_index().drop(["orlogid_encoded"], axis=1).rename(
+            {"new_person": "person_integer"}, axis=1).sort_values(["person_integer"]).reset_index(drop=True).drop(["person_integer"], axis=1)
+
+        very_denseflow_tr = very_dense_flow_stat.iloc[train_index]
+        very_denseflow_te = very_dense_flow_stat.iloc[test_index]
+        very_denseflow_val = very_dense_flow_stat.iloc[valid_index]
+        very_denseflow_input_dim = len(very_dense_flow_stat.columns)
+
+        train_set.append(very_denseflow_tr)
+        valid_set.append(very_denseflow_val)
+        test_set.append(very_denseflow_te)
+
+        features = features + list(very_dense_flow_stat.columns)
 
 
+        other_intra_flow_wlabs_stat = other_intra_flow_wlabs_stat.merge(new_index, on="orlogid_encoded", how="inner").set_index('new_person').reindex(list(range(preops.index.min(), preops.index.max() + 1)), fill_value=0).reset_index().drop(["orlogid_encoded"], axis=1).rename(
+            {"new_person": "person_integer"}, axis=1).sort_values(["person_integer"]).reset_index(drop=True).drop(["person_integer"], axis=1)
 
-        very_dense_flow = very_dense_flow.merge(new_index, on="orlogid_encoded", how="inner").drop(["orlogid_encoded"],
-                                                                                                   axis=1).rename(
-            {"new_person": "person_integer"}, axis=1)
-        other_intra_flow_wlabs = other_intra_flow_wlabs.merge(new_index, on="orlogid_encoded", how="inner").drop(
-            ["orlogid_encoded"], axis=1).rename({"new_person": "person_integer"}, axis=1)
+        otherflow_tr = other_intra_flow_wlabs_stat.iloc[train_index]
+        otherflow_te = other_intra_flow_wlabs_stat.iloc[test_index]
+        otherflow_val = other_intra_flow_wlabs_stat.iloc[valid_index]
+        otherflow_input_dim = len(other_intra_flow_wlabs_stat.columns)
+
+        train_set.append(otherflow_tr)
+        valid_set.append(otherflow_val)
+        test_set.append(otherflow_te)
+
+        features = features + list(other_intra_flow_wlabs_stat.columns)
+
+    if 'meds' in modality_to_use:
+
+        all_med_data_stat = all_med_data_stat.merge(new_index, on="orlogid_encoded", how="inner").set_index('new_person').reindex(list(range(preops.index.min(), preops.index.max() + 1)), fill_value=0).reset_index().drop(["orlogid_encoded"], axis=1).rename({"new_person": "person_integer"}, axis=1).sort_values(["person_integer"]).reset_index(drop=True).drop(["person_integer"], axis=1)
+
+        meds_tr = all_med_data_stat.iloc[train_index]
+        meds_te = all_med_data_stat.iloc[test_index]
+        meds_val = all_med_data_stat.iloc[valid_index]
+        meds_input_dim = len(all_med_data_stat.columns)
+
+        train_set.append(meds_tr)
+        valid_set.append(meds_val)
+        test_set.append(meds_te)
+
+        features = features + list(all_med_data_stat.columns)
 
     train_data = np.concatenate(train_set, axis=1)
     valid_data = np.concatenate(valid_set,axis=1)
@@ -607,6 +641,7 @@ for runNum in range(len(best_5_random_number)):
 
             preds = regr.best_estimator_.predict(test_data)
             preds_tr = regr.best_estimator_.predict(train_data)
+
     if (binary_outcome):
         test_auroc = roc_auc_score(y_test, preds[:, 1])
         test_auprc = average_precision_score(y_test, preds[:, 1])
