@@ -491,7 +491,7 @@ if __name__ == "__main__":
 
     parser.add_argument("--randomSeed", default=100, type=int)
     parser.add_argument("--task", default="icu")
-    parser.add_argument("--numtrialsHP", default=25, type=int)
+    parser.add_argument("--numtrialsHP", default=15, type=int)
 
     args_input = parser.parse_args()
 
