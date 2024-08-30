@@ -18,6 +18,7 @@ from torch.utils.data import DataLoader, TensorDataset
 import torch.optim as optim
 from sklearn.metrics import roc_auc_score, average_precision_score, confusion_matrix, roc_curve, precision_recall_curve, \
     RocCurveDisplay, PrecisionRecallDisplay, confusion_matrix, r2_score
+from scipy.stats.stats import pearsonr
 from datetime import datetime
 import matplotlib.pyplot as plt
 import Preops_processing as pps
@@ -193,11 +194,11 @@ if eval('args.flow') == True:
 if eval('args.meds') == True:
     modality_to_use.append('meds')
 
+# data_dir = '/mnt/ris/ActFastExports/v1.3.2/'
+data_dir = '/input/'
 
-# data_dir = '/input/'
-
-out_dir = './'
-# out_dir = '/output/'
+# out_dir = './'
+out_dir = '/output/'
 
 preops = pd.read_csv(data_dir + 'epic_preop.csv')
 outcomes = pd.read_csv(data_dir + 'epic_outcomes.csv')
@@ -206,7 +207,9 @@ end_of_case_times = outcomes[['orlogid_encoded', 'endtime']]
 
 # end_of_case_times = feather.read_feather(data_dir + 'end_of_case_times.feather')
 regression_outcome_list = ['postop_los', 'survival_time', 'readmission_survival', 'total_blood', 'postop_Vent_duration', 'n_glu_high',
-                           'low_sbp_time','aoc_low_sbp', 'low_relmap_time', 'low_relmap_aoc', 'low_map_time', 'low_map_aoc', 'timew_pain_avg_0', 'median_pain_0', 'worst_pain_0', 'worst_pain_1']
+                           'low_sbp_time','aoc_low_sbp', 'low_relmap_time', 'low_relmap_aoc', 'low_map_time',
+                           'low_map_aoc', 'timew_pain_avg_0', 'median_pain_0', 'worst_pain_0', 'worst_pain_1',
+                           'opioids_count_day0', 'opioids_count_day1']
 binary_outcome = args.task not in regression_outcome_list
 
 config = dict(
@@ -711,12 +714,12 @@ for i in range(len(modality_to_use)):
 
 best_5_random_number = []  # this will take the args when directly run otherwise it will read the number from the file namee
 if eval(args.bestModel) == True:
-    path_to_dir = '/home/trips/PeriOperative_RiskPrediction/HP_output/'
-    sav_dir = '/home/trips/PeriOperative_RiskPrediction/Best_results/Intraoperative/'
+    # path_to_dir = '/home/trips/PeriOperative_RiskPrediction/HP_output/'
+    # sav_dir = '/home/trips/PeriOperative_RiskPrediction/Best_results/Intraoperative/'
 
     # this is to be used when running the best setting results on RIS
-    # path_to_dir = output_dir + 'HP_output/'
-    # sav_dir = output_dir + 'Best_results/Intraoperative/'
+    path_to_dir = out_dir + 'HP_output/'
+    sav_dir = out_dir + 'Best_results/Intraoperative/'
 
     # Best_trial_resulticu_transformer_modal__preops_cbow_pmh_problist_homemeds_flow_meds_424_24-07-16-16:13:30.json
     file_names = os.listdir(path_to_dir)
@@ -752,8 +755,14 @@ else:
     config['hidden_units_final'] =args.preopsWidthFinal
     config['weightInt'] =args.XavOrthWeightInt
 
-perf_metric = np.zeros((len(best_5_random_number), 2))  # 2 is for the metrics auroc and auprc
-# breakpoint()
+if binary_outcome:
+    perf_metric = np.zeros((len(best_5_random_number), 2)) # 2 is for the metrics auroc and auprc
+    if args.overSampling == True:
+        os_flag =True
+else:
+    perf_metric = np.zeros((len(best_5_random_number), 5)) # 5 is for the metrics corr, corr_p, R2, MAE, MSE
+    os_flag =False
+
 for runNum in range(len(best_5_random_number)):
     # starting time of the run
     start_time = datetime.now()
@@ -1089,8 +1098,8 @@ for runNum in range(len(best_5_random_number)):
 
     # initializing the loss function
     if not binary_outcome:
-        # criterion = torch.nn.MSELoss()
-        criterion = torch.nn.L1Loss()
+        criterion = torch.nn.MSELoss()
+        # criterion = torch.nn.L1Loss()
     else:
       criterion = torch.nn.BCELoss()
 
@@ -1109,7 +1118,7 @@ for runNum in range(len(best_5_random_number)):
       model.train()
       ## the default __getitem__ is like 2 orders of magnitude slower
       shuffle_index = torch.randperm(n=data_tr['outcomes'].shape[0])
-      if (args.overSampling == True) and (args.task != 'endofcase'):
+      if (os_flag == True) and (args.task != 'endofcase'):
           pos_idx = (data_tr['outcomes'] == 1).nonzero()
           neg_idx = (data_tr['outcomes'] == 0).nonzero()
           if batchsize % 2 == 0:  # this is done because it was creating a problem when the batchsize was an odd number
@@ -1119,7 +1128,7 @@ for runNum in range(len(best_5_random_number)):
       else:
           nbatch = data_tr['outcomes'].shape[0] // batchsize
       for i in range(nbatch):
-          if (overSampling == True) and (args.task != 'endofcase'):
+          if (os_flag == True) and (args.task != 'endofcase'):
               if batchsize % 2 == 0:
                   neg_indexbatch = neg_idx[range(i * int(batchsize / 2), (i + 1) * int(batchsize / 2))]
               else:
@@ -1259,11 +1268,34 @@ for runNum in range(len(best_5_random_number)):
     true_y_test = np.concatenate(true_y_test)
     pred_y_test = np.concatenate(pred_y_test_best)
 
-    test_auroc = roc_auc_score(true_y_test, pred_y_test)
-    test_auprc = average_precision_score(true_y_test, pred_y_test)
+    if binary_outcome:
+        test_auroc = roc_auc_score(true_y_test, pred_y_test)
+        test_auprc = average_precision_score(true_y_test, pred_y_test)
 
-    perf_metric[runNum, 0] =test_auroc
-    perf_metric[runNum, 1] = test_auprc
+        perf_metric[runNum, 0] =test_auroc
+        perf_metric[runNum, 1] = test_auprc
+    else:
+        corr_value = np.round(pearsonr(np.array(true_y_test), np.array(pred_y_test))[0], 3)
+        cor_p_value = np.round(pearsonr(np.array(true_y_test), np.array(pred_y_test))[1], 3)
+        print(str(args.task) + " prediction with correlation ", corr_value, ' and corr p value of ', cor_p_value)
+        r2value = r2_score(np.array(true_y_test), np.array(pred_y_test))  # inbuilt function also exists for R2
+        print(" Value of R2 ", r2value)
+        temp_df = pd.DataFrame(columns=['true_value', 'pred_value'])
+        temp_df['true_value'] = np.array(true_y_test)
+        temp_df['pred_value'] = np.array(pred_y_test)
+        temp_df['abs_diff'] = abs(temp_df['true_value'] - temp_df['pred_value'])
+        temp_df['sqr_diff'] = (temp_df['true_value'] - temp_df['pred_value']) * (
+                temp_df['true_value'] - temp_df['pred_value'])
+        mae_full = np.round(temp_df['abs_diff'].mean(), 3)
+        mse_full = np.round(temp_df['sqr_diff'].mean(), 3)
+        print("MAE on the test set ", mae_full)
+        print("MSE on the test set ", mse_full)
+
+        perf_metric[runNum, 0] = corr_value
+        perf_metric[runNum, 1] = cor_p_value
+        perf_metric[runNum, 2] = r2value
+        perf_metric[runNum, 3] = mae_full
+        perf_metric[runNum, 4] = mse_full
 
     if eval(args.bestModel) == True:
         metadata_file = dir_name + 'BestModel_metadata' + str(best_5_random_number[runNum]) + '_' + args.task + '.pickle'  # had to use pickle instead of json because there is a tensor in config which is assigned to dict outside of loop so can't convert it to list
@@ -1280,7 +1312,8 @@ for runNum in range(len(best_5_random_number)):
         best_dict_local['model_file_path'] = saving_path_name
         best_dict_local['train_orlogids'] = outcome_df.iloc[train_index]["orlogid_encoded"].values.tolist()
         best_dict_local['test_orlogids'] =outcome_df.iloc[test_index]["orlogid_encoded"].values.tolist()
-        best_dict_local['outcome_rate'] = np.round(outcome_df.iloc[test_index]["outcome"].mean(), decimals=4)
+        if binary_outcome:
+            best_dict_local['outcome_rate'] = np.round(outcome_df.iloc[test_index]["outcome"].mean(), decimals=4)
         # this is saving the true and predicted y for each run because the test set is the same
         if runNum == 0:
             outcome_with_pred_test = outcome_df.iloc[test_index]
@@ -1291,21 +1324,20 @@ for runNum in range(len(best_5_random_number)):
         dict_key = 'run_randomSeed_' + str(int(best_5_random_number[runNum]))  # this is so dumb because it wont take the key dynamically
         best_metadata_dict[dict_key] = best_dict_local
 
-    fpr_roc, tpr_roc, thresholds_roc = roc_curve(true_y_test, pred_y_test, drop_intermediate=False)
-    precision_prc, recall_prc, thresholds_prc = precision_recall_curve(true_y_test, pred_y_test)
-    # interpolation in ROC
-    mean_fpr = np.linspace(0, 1, 100)
-    tpr_inter = np.interp(mean_fpr, fpr_roc, tpr_roc)
-    mean_fpr = np.round(mean_fpr, decimals=2)
-    print("Sensitivity at 90%  specificity is ", np.round(tpr_inter[np.where(mean_fpr == 0.10)], 2))
-
+    if binary_outcome:
+        fpr_roc, tpr_roc, thresholds_roc = roc_curve(true_y_test, pred_y_test, drop_intermediate=False)
+        precision_prc, recall_prc, thresholds_prc = precision_recall_curve(true_y_test, pred_y_test)
+        # interpolation in ROC
+        mean_fpr = np.linspace(0, 1, 100)
+        tpr_inter = np.interp(mean_fpr, fpr_roc, tpr_roc)
+        mean_fpr = np.round(mean_fpr, decimals=2)
+        print("Sensitivity at 90%  specificity is ", np.round(tpr_inter[np.where(mean_fpr == 0.10)], 2))
     end_time = datetime.now()  # only writing part is remaining in the code to time
     timetaken = end_time-start_time
     print("time taken to finish run number ", runNum, " is ", timetaken)
 
 
 print("Tranquila")
-# breakpoint()
 # saving metadata for all best runs in json; decided to save it also as pickle because the nested datatypes were not letting it be serializable
 metadata_filename = dir_name + '/Best_runs_metadata.pickle'
 with open(metadata_filename, 'wb') as outfile: pickle.dump(best_metadata_dict, outfile)
