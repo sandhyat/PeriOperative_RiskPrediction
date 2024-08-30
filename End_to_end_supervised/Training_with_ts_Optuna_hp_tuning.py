@@ -20,6 +20,7 @@ from torch.utils.data import DataLoader, TensorDataset
 import torch.optim as optim
 from sklearn.metrics import roc_auc_score, average_precision_score, confusion_matrix, roc_curve, precision_recall_curve, \
     RocCurveDisplay, PrecisionRecallDisplay, confusion_matrix, r2_score
+from scipy.stats.stats import pearsonr
 from datetime import datetime
 import matplotlib.pyplot as plt
 import Preops_processing as pps
@@ -80,7 +81,8 @@ def objective(trial, args):
     regression_outcome_list = ['postop_los', 'survival_time', 'readmission_survival', 'total_blood',
                                'postop_Vent_duration', 'n_glu_high',
                                'low_sbp_time', 'aoc_low_sbp', 'low_relmap_time', 'low_relmap_aoc', 'low_map_time',
-                               'low_map_aoc', 'timew_pain_avg_0', 'median_pain_0', 'worst_pain_0', 'worst_pain_1']
+                               'low_map_aoc', 'timew_pain_avg_0', 'median_pain_0', 'worst_pain_0', 'worst_pain_1',
+                               'opioids_count_day0', 'opioids_count_day1']
     binary_outcome = args.task not in regression_outcome_list
     config['binary'] = binary_outcome
 
@@ -902,8 +904,8 @@ def objective(trial, args):
 
     # initializing the loss function
     if not binary_outcome:
-        # criterion = torch.nn.MSELoss()
-        criterion = torch.nn.L1Loss()
+        criterion = torch.nn.MSELoss()
+        # criterion = torch.nn.L1Loss()
     else:
         criterion = torch.nn.BCELoss()
 
@@ -915,15 +917,22 @@ def objective(trial, args):
     lr_schedular_epoch_dict = {}
     lr_schedular_epoch_dict[0] = updating_lr
 
-    num_epochs = 50
+    if binary_outcome:
+        if args.overSampling == True:
+            os_flag = True
+    else:
+        os_flag = False
+
+
+    num_epochs = 25
     print("Started one trial")
-    for epoch in range(num_epochs):  # setting a max of 50 on the number of epochs
+    for epoch in range(num_epochs):  # setting a max of 25/50 on the number of epochs
         loss_tr = 0
         loss_tr_cls = 0
         model.train()
         ## the default __getitem__ is like 2 orders of magnitude slower
         shuffle_index = torch.randperm(n=data_tr['outcomes'].shape[0])
-        if (args.overSampling == True) and (args.task != 'endofcase'):
+        if (os_flag == True) and (args.task != 'endofcase'):
             pos_idx = (data_tr['outcomes'] == 1).nonzero()
             neg_idx = (data_tr['outcomes'] == 0).nonzero()
             if batchSize % 2 == 0:  # this is done because it was creating a problem when the batchsize was an odd number
@@ -933,7 +942,7 @@ def objective(trial, args):
         else:
             nbatch = data_tr['outcomes'].shape[0] // batchSize
         for i in range(nbatch):
-            if (args.overSampling == True) and (args.task != 'endofcase'):
+            if (os_flag == True) and (args.task != 'endofcase'):
                 if batchSize % 2 == 0:
                     neg_indexbatch = neg_idx[range(i * int(batchSize / 2), (i + 1) * int(batchSize / 2))]
                 else:
@@ -1063,21 +1072,29 @@ def objective(trial, args):
             lr_schedular_epoch_dict[epoch] = updating_lr
 
         try:
-            # this is needed because in every batch the labels are saved as a list and need concatenation for accesing the whol valid set labels
+            # this is needed because in every batch the labels are saved as a list and need concatenation for accesing the whole valid set labels
             true_y_test = np.concatenate(true_y_test)
             pred_y_test = np.concatenate(pred_y_test)
         except(ValueError):
             print("---Debug---")
             exit()
             breakpoint()
-        try:
-            val_auroc = roc_auc_score(true_y_test, pred_y_test)
-            val_auprc = average_precision_score(true_y_test, pred_y_test)
-        except(ValueError):
-            val_auroc=0
-            print("THE VALIDATION SET DIDN'T HAVE ANY POSITIVE EXAMPLES")
-            exit()
-        trial.report(val_auroc, epoch)
+        if binary_outcome:
+            try:
+                val_auroc = roc_auc_score(true_y_test, pred_y_test)
+                val_auprc = average_precision_score(true_y_test, pred_y_test)
+            except(ValueError):
+                val_auroc=0
+                print("THE VALIDATION SET DIDN'T HAVE ANY POSITIVE EXAMPLES")
+                exit()
+            print('AUROC and AUPRC for the validation set', val_auroc, val_auprc)
+            val_metric = val_auroc
+            trial.report(val_metric, epoch)
+        else:
+            r2value = r2_score(np.array(true_y_test), np.array(pred_y_test))  # inbuilt function also exists for R2
+            print(" Value of R2 for the validation set", r2value)
+            val_metric = r2value
+            trial.report(val_metric, epoch)
 
         # Handle pruning based on the intermediate value.
         if trial.should_prune():
@@ -1085,18 +1102,13 @@ def objective(trial, args):
 
         # print("current lr ", optimizer.param_groups[0]['lr'])
         # 1e-8 is obtained by multiplying 1e-3 by (0.25)^5 so to make it general we can have initial_learning_rate * (learningRateFactor)^5
-        if optimizer.param_groups[0]['lr'] <= learningRate * np.power(learningRateFactor,
-                                                                           5):  # hardcoding for now because our schedule is such that 10**-3 * (1, 1/4, 1/16, 1/64, 1/256, 1/1024, 0) with an initial rate of 10**-3 an learning rate factor of 0.25
+        if optimizer.param_groups[0]['lr'] <= learningRate * np.power(learningRateFactor, 5):  # hardcoding for now because our schedule is such that 10**-3 * (1, 1/4, 1/16, 1/64, 1/256, 1/1024, 0) with an initial rate of 10**-3 an learning rate factor of 0.25
             print("inside the early stopping loop")
             print("best validation loss ", best_metric)
             break
 
-        print('AUROC and AUPRC for the validation set', val_auroc, val_auprc)
-
     print("Finished one trial")
-    return val_auroc
-
-
+    return val_metric
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='TS modular different model training')
@@ -1172,7 +1184,7 @@ if __name__ == "__main__":
 
     std_name = str(args_input.task)+"_"+str(args_input.modelType)+modalities_to_add + "_"+str(args_input.randomSeed) +"_"
     study = optuna.create_study(direction="maximize", study_name=std_name)
-    study.set_metric_names(["Validation_set_auroc"])
+    study.set_metric_names(["Validation_set_aurocOrR2"])
 
     study.optimize(lambda trial: objective(trial, args_input), n_trials=args_input.numtrialsHP, gc_after_trial=True)
 
