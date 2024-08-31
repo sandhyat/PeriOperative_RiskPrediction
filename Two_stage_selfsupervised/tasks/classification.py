@@ -1,8 +1,11 @@
 import numpy as np
 from . import _eval_protocols as eval_protocols
 from sklearn.preprocessing import label_binarize
+from sklearn.model_selection import train_test_split, GridSearchCV
+from scipy.stats.stats import pearsonr
+from xgboost import XGBClassifier, XGBRegressor
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
-from sklearn.metrics import average_precision_score, roc_auc_score
+from sklearn.metrics import average_precision_score, roc_auc_score, r2_score
 import pandas as pd
 from . import scarf_model as preop_model
 from . import loss as scarf_loss
@@ -479,6 +482,155 @@ def eval_classification_sep1(model, proc_modality_dict_train, train_labels, proc
         auroc = roc_auc_score(test_labels_onehot, y_score)
 
     return y_score, y_score_tr, {'acc': acc, 'auprc': auprc, 'auroc': auroc}
+
+def eval_regression_sep1(model, proc_modality_dict_train, train_labels, proc_modality_dict_test, test_labels, all_rep,
+                        outcome, randomSeed, eval_protocol='xgbt'):  # eval_protocol doesn't have use here currently
+
+    modalities_selected = proc_modality_dict_train.keys()
+    # breakpoint()
+    if 'flow' in modalities_selected:
+        train_data_f = proc_modality_dict_train['flow']
+        test_data_f = proc_modality_dict_test['flow']
+        train_repr_f = model.encode(train_data_f, 'f', encoding_window='full_series' if train_labels.ndim == 1 else None)
+        test_repr_f = model.encode(test_data_f,  'f', encoding_window='full_series' if train_labels.ndim == 1 else None)
+
+
+    if 'meds' in modalities_selected:
+        train_data_m = proc_modality_dict_train['meds']
+        test_data_m = proc_modality_dict_test['meds']
+        train_repr_m = model.encode(train_data_m, 'm', encoding_window='full_series' if train_labels.ndim == 1 else None)
+        test_repr_m = model.encode(test_data_m,  'm', encoding_window='full_series' if train_labels.ndim == 1 else None)
+
+
+    if 'preops_o' in modalities_selected:
+        train_pr = proc_modality_dict_train['preops_o']
+        test_pr = proc_modality_dict_test['preops_o']
+        train_pr_l = proc_modality_dict_train['preops_l']
+        test_pr_l = proc_modality_dict_test['preops_l']
+        train_bw = proc_modality_dict_train['cbow']
+        test_bw = proc_modality_dict_test['cbow']
+        if all_rep == True:
+            train_ds = preop_model.ExampleDataset(train_pr, train_labels)
+            test_ds = preop_model.ExampleDataset(test_pr, test_labels)
+            train_loader = DataLoader(train_ds, batch_size=128, shuffle=False)
+            test_loader = DataLoader(test_ds, batch_size=128, shuffle=False)
+            train_repr_pr = model.pr_dataset_embeddings(train_loader)
+            test_repr_pr = model.pr_dataset_embeddings(test_loader)
+
+            train_ds = preop_model.ExampleDataset(train_pr_l, train_labels)
+            test_ds = preop_model.ExampleDataset(test_pr_l, test_labels)
+            train_loader = DataLoader(train_ds, batch_size=128, shuffle=False)
+            test_loader = DataLoader(test_ds, batch_size=128, shuffle=False)
+            train_repr_pr_l = model.pr_l_dataset_embeddings(train_loader)
+            test_repr_pr_l = model.pr_l_dataset_embeddings(test_loader)
+
+            train_ds = preop_model.ExampleDataset(train_bw, train_labels)
+            test_ds = preop_model.ExampleDataset(test_bw, test_labels)
+            train_loader = DataLoader(train_ds, batch_size=128, shuffle=False)
+            test_loader = DataLoader(test_ds, batch_size=128, shuffle=False)
+            train_repr_bw = model.cbow_dataset_embeddings(train_loader)
+            test_repr_bw = model.cbow_dataset_embeddings(test_loader)
+
+            train_repr_pr = np.concatenate((train_repr_pr, train_repr_pr_l, train_repr_bw), axis=1)
+            test_repr_pr = np.concatenate((test_repr_pr, test_repr_pr_l, test_repr_bw), axis=1)
+
+        else:
+            train_repr_pr = np.concatenate((train_pr, train_pr_l, train_bw), axis=1)
+            test_repr_pr = np.concatenate((test_pr, test_pr_l, test_bw), axis=1)
+
+    if 'homemeds' in modalities_selected:
+        train_hm = proc_modality_dict_train['homemeds']
+        test_hm = proc_modality_dict_test['homemeds']
+        if all_rep == True:
+            train_ds = preop_model.ExampleDataset(train_hm, train_labels)
+            test_ds = preop_model.ExampleDataset(test_hm, test_labels)
+            train_loader = DataLoader(train_ds, batch_size=128, shuffle=False)
+            test_loader = DataLoader(test_ds, batch_size=128, shuffle=False)
+            train_repr_hm = model.hm_dataset_embeddings(train_loader)
+            test_repr_hm = model.hm_dataset_embeddings(test_loader)
+
+            train_repr_pr = np.concatenate((train_repr_pr, train_repr_hm), axis=1)
+            test_repr_pr = np.concatenate((test_repr_pr, test_repr_hm), axis=1)
+        else:
+            train_repr_pr = np.concatenate((train_repr_pr, train_hm), axis=1)
+            test_repr_pr = np.concatenate((test_repr_pr, test_hm), axis=1)
+
+    if 'pmh' in modalities_selected:
+        train_pmh = proc_modality_dict_train['pmh']
+        test_pmh = proc_modality_dict_test['pmh']
+        if all_rep == True:
+            train_ds = preop_model.ExampleDataset(train_pmh, train_labels)
+            test_ds = preop_model.ExampleDataset(test_pmh, test_labels)
+            train_loader = DataLoader(train_ds, batch_size=128, shuffle=False)
+            test_loader = DataLoader(test_ds, batch_size=128, shuffle=False)
+            train_repr_pmh = model.pmh_dataset_embeddings(train_loader)
+            test_repr_pmh = model.pmh_dataset_embeddings(test_loader)
+
+            train_repr_pr = np.concatenate((train_repr_pr, train_repr_pmh), axis=1)
+            test_repr_pr = np.concatenate((test_repr_pr, test_repr_pmh), axis=1)
+        else:
+            train_repr_pr = np.concatenate((train_repr_pr, train_pmh), axis=1)
+            test_repr_pr = np.concatenate((test_repr_pr, test_pmh), axis=1)
+
+    if 'problist' in modalities_selected:
+        train_pblist = proc_modality_dict_train['problist']
+        test_pblist = proc_modality_dict_test['problist']
+        if all_rep == True:
+            train_ds = preop_model.ExampleDataset(train_pblist, train_labels)
+            test_ds = preop_model.ExampleDataset(test_pblist, test_labels)
+            train_loader = DataLoader(train_ds, batch_size=128, shuffle=False)
+            test_loader = DataLoader(test_ds, batch_size=128, shuffle=False)
+            train_repr_pblist = model.problist_dataset_embeddings(train_loader)
+            test_repr_pblist = model.problist_dataset_embeddings(test_loader)
+
+            train_repr_pr = np.concatenate((train_repr_pr, train_repr_pblist), axis=1)
+            test_repr_pr = np.concatenate((test_repr_pr, test_repr_pblist), axis=1)
+        else:
+            train_repr_pr = np.concatenate((train_repr_pr, train_pblist), axis=1)
+            test_repr_pr = np.concatenate((test_repr_pr, test_pblist), axis=1)
+
+    # breakpoint()
+    if ('flow' in modalities_selected) and ('meds' in modalities_selected) and ('preops_o' in modalities_selected):
+        train_repr = np.concatenate((train_repr_f, train_repr_m, train_repr_pr), axis=1)
+        test_repr = np.concatenate((test_repr_f, test_repr_m, test_repr_pr), axis=1)
+    elif ('flow' in modalities_selected) and ('meds' in modalities_selected):
+        train_repr = np.concatenate((train_repr_f, train_repr_m), axis=1)
+        test_repr = np.concatenate((test_repr_f, test_repr_m), axis=1)
+    elif ('flow' in modalities_selected):
+        train_repr = train_repr_f
+        test_repr = test_repr_f
+    elif ('meds' in modalities_selected):
+        train_repr = train_repr_m
+        test_repr = test_repr_m
+
+    xgb_model = XGBRegressor(random_state=randomSeed)
+    if True:
+        regr = GridSearchCV(xgb_model,
+                            {"max_depth": [4, 6], "n_estimators": [50, 100, 200], "learning_rate": [0.01, 0.1, 1.0]}, cv=3,
+                            verbose=1, )
+        regr.fit(train_repr, train_labels)
+
+        preds = regr.best_estimator_.predict(test_repr)
+        preds_tr = regr.best_estimator_.predict(train_repr)
+    # xgb_model.fit(train_repr, train_labels)
+    # preds = xgb_model.predict(test_repr)
+    # preds_tr = xgb_model.predict(train_repr)
+    corr_value = np.round(pearsonr(np.array(test_labels), np.array(preds))[0], 3)
+    cor_p_value = np.round(pearsonr(np.array(test_labels), np.array(preds))[1], 3)
+    print(str(outcome) + " prediction with correlation ", corr_value, ' and corr p value of ', cor_p_value)
+    r2value = r2_score(np.array(test_labels), np.array(preds))  # inbuilt function also exists for R2
+    print(" Value of R2 ", r2value)
+    temp_df = pd.DataFrame(columns=['true_value', 'pred_value'])
+    temp_df['true_value'] = np.array(test_labels)
+    temp_df['pred_value'] = np.array(preds)
+    temp_df['abs_diff'] = abs(temp_df['true_value'] - temp_df['pred_value'])
+    temp_df['sqr_diff'] = (temp_df['true_value'] - temp_df['pred_value']) * (
+            temp_df['true_value'] - temp_df['pred_value'])
+    mae_full = np.round(temp_df['abs_diff'].mean(), 3)
+    mse_full = np.round(temp_df['sqr_diff'].mean(), 3)
+    print("MAE on the test set ", mae_full)
+    print("MSE on the test set ", mse_full)
+    return preds, preds_tr, {'r2value': r2value, 'CorVal': corr_value, 'cor_p_value': cor_p_value, 'mae':mae_full, 'mse':mse_full}
 
 def eval_classification_sep1_tUrl(model, proc_modality_dict_train, train_labels, proc_modality_dict_test, test_labels, all_rep,
                         outcome, randomSeed, train_idx, test_idx,rep_save=0, eval_protocol='xgbt'):

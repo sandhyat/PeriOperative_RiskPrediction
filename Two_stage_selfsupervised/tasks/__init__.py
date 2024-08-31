@@ -1,6 +1,7 @@
 from .classification import eval_classification
 from .classification import eval_classification_sep
 from .classification import eval_classification_sep1
+from .classification import eval_regression_sep1
 from .classification import eval_classification_noCL
 from .classification import eval_classification_sep1_tUrl
 

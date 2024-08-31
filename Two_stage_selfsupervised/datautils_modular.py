@@ -147,7 +147,8 @@ def load_epic(outcome, modality_to_uselist, randomSeed, data_dir, out_dir):  #da
     regression_outcome_list = ['postop_los', 'survival_time', 'readmission_survival', 'total_blood',
                                'postop_Vent_duration', 'n_glu_high',
                                'low_sbp_time', 'aoc_low_sbp', 'low_relmap_time', 'low_relmap_aoc', 'low_map_time',
-                               'low_map_aoc', 'timew_pain_avg_0', 'median_pain_0', 'worst_pain_0', 'worst_pain_1']
+                               'low_map_aoc', 'timew_pain_avg_0', 'median_pain_0', 'worst_pain_0', 'worst_pain_1',
+                               'opioids_count_day0', 'opioids_count_day1']
     binary_outcome = outcome not in regression_outcome_list
 
     outcomes = outcomes.dropna(subset=['ICU'])
@@ -244,7 +245,7 @@ def load_epic(outcome, modality_to_uselist, randomSeed, data_dir, out_dir):  #da
         set(end_of_case_times['orlogid_encoded'].values)).intersection(
         set(preops['orlogid_encoded'].values)))
     if False:
-        combined_case_set = combined_case_set[:10000]
+        combined_case_set = combined_case_set[:1000]
         # combined_case_set = np.random.choice(combined_case_set, 10000, replace=False)
 
     outcome_df = outcome_df.loc[outcome_df['orlogid_encoded'].isin(combined_case_set)]
@@ -265,7 +266,7 @@ def load_epic(outcome, modality_to_uselist, randomSeed, data_dir, out_dir):  #da
 
     if 'preops_o' not in modality_to_uselist:
         test_size = 0.2
-        valid_size = 0.05  # change back to 0.00005 for the full dataset
+        valid_size = 0.00005  # change back to 0.00005 for the full dataset
         y_outcome = outcome_df["outcome"].values
         preops.reset_index(drop=True, inplace=True)
         upto_test_idx = int(test_size * len(preops))
@@ -328,7 +329,7 @@ def load_epic(outcome, modality_to_uselist, randomSeed, data_dir, out_dir):  #da
             outcome_df[
                 "outcome"].values,
             binary_outcome=binary_outcome,
-            valid_size=0.05, random_state=randomSeed, input_dr=data_dir,
+            valid_size=0.00005, random_state=randomSeed, input_dr=data_dir,
             output_dr=out_dir)  # change back to 0.00005
 
         if outcome == 'icu':  # this part is basically dropping the planned icu cases from the evaluation set (value of plannedDispo are numeric after processing; the df has also been changed )
@@ -353,10 +354,14 @@ def load_epic(outcome, modality_to_uselist, randomSeed, data_dir, out_dir):  #da
     if nan_idx_test.size != 0:
         test_y = np.delete(test_y.values, nan_idx_test, axis=0)
 
-    labels = np.unique(train_y)
-    transform = {k: i for i, k in enumerate(labels)}
-    train_y = np.vectorize(transform.get)(train_y)
-    test_y = np.vectorize(transform.get)(test_y)
+    if binary_outcome:
+        labels = np.unique(train_y)
+        transform = {k: i for i, k in enumerate(labels)}
+        train_y = np.vectorize(transform.get)(train_y)
+        test_y = np.vectorize(transform.get)(test_y)
+    else:
+        train_y = np.array(train_y)
+        test_y = np.array(test_y)
 
     output_to_return_train = {}
     output_to_return_test = {}

@@ -110,7 +110,7 @@ class MVCL_f_m_sep:
             after_epoch_callback=None,
             save_dir=None,
             seed_used=0,
-            alert_Ids=None,
+            alert_Ids=50,
             alertID_embed_dim=1,
     ):
         ''' Initialize a MVCL model.
