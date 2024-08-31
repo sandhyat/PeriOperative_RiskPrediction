@@ -40,7 +40,7 @@ parser.add_argument("--home_medsform", default='embedding_sum') # options {'ohe'
 parser.add_argument('--TSMedAggType', default='MedUnitComboSumOverTime') # options {'Embedding', 'MedUnitComboSumOverTime'}
 
 ## task and setup parameters
-parser.add_argument("--modelType", default='XGBT')  # options {'TabNet', others later}
+parser.add_argument("--modelType", default='XGBTtsSum')  # options {'TabNet', others later}
 parser.add_argument("--task",  default="icu") #
 parser.add_argument("--randomSeed", default=100, type=int )
 parser.add_argument("--bestModel",  default="False", help='True when the best HP tuned settings are used on the train+valid setup') #

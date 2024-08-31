@@ -562,7 +562,7 @@ if __name__ == "__main__":
     parser.add_argument('--TSMedAggType',
                         default='MedUnitComboSumOverTime')  # options {'Embedding', 'MedUnitComboSumOverTime'}
 
-    parser.add_argument("--modelType", default='XGBT')  # options {'TabNet', others later}
+    parser.add_argument("--modelType", default='XGBTtsSum')  # options {'TabNet', others later}
 
     parser.add_argument("--randomSeed", default=100, type=int)
     parser.add_argument("--task", default="icu")
