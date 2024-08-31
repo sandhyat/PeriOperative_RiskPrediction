@@ -216,9 +216,9 @@ if __name__ == '__main__':
         binary_outcome=True
 
     if binary_outcome:
-        perf_metric = np.zeros((args.number_runs, 2))  # 2 is for the metrics auroc and auprc
+        perf_metric = np.zeros((len(best_5_random_number), 2))  # 2 is for the metrics auroc and auprc
     else:
-        perf_metric = np.zeros((args.number_runs, 5))  # 5 is for the metrics corr, corr_p, R2, MAE, MSE
+        perf_metric = np.zeros((len(best_5_random_number), 5))  # 5 is for the metrics corr, corr_p, R2, MAE, MSE
 
     if eval('args.onlyEval')==True:
         with open(path_to_dir + combined_Result_filename, 'r') as file: metrics = file.read()
