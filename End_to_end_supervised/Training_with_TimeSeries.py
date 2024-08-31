@@ -151,7 +151,7 @@ parser.add_argument("--batchSize",  default=32, type=int) #
 parser.add_argument("--learningRate",  default=1e-3, type=float) #
 parser.add_argument("--learningRateFactor",  default=0.1, type=float) #
 parser.add_argument("--LRPatience",  default=2, type=int) #
-parser.add_argument("--epochs",  default=50, type=int) #
+parser.add_argument("--epochs",  default=25, type=int) #
 parser.add_argument("--XavOrthWeightInt", default=True, action='store_true')  # changes torch's weight initialization to xavier and orthogonal
 
 
