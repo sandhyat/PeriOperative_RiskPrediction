@@ -9,7 +9,7 @@ import json
 import time
 import datetime
 from Multiview_CL_modular import MVCL_f_m_sep
-from tasks import eval_classification, eval_classification_sep, eval_classification_sep1, eval_classification_noCL
+from tasks import eval_classification, eval_classification_sep, eval_classification_sep1, eval_classification_noCL, eval_regression_sep1
 import datautils_modular
 from utils import init_dl_program, name_with_datetime, pkl_save, data_dropout
 from sklearn.metrics import roc_auc_score, average_precision_score, roc_curve, precision_recall_curve
@@ -209,10 +209,16 @@ if __name__ == '__main__':
         dir_name = './training/'+ args.outcome +'_' + name_with_datetime(modalities_to_add)
         os.makedirs(dir_name, exist_ok=True)
 
+    ## could have derived it but the labels are coming later in the code so can't use the unique function; hence the hardcoding for now
+    if args.outcome in ['postop_los', 'opioids_count_day0', 'opioids_count_day1']:
+        binary_outcome=False
+    else:
+        binary_outcome=True
 
-
-
-    perf_metric = np.zeros((len(best_5_random_number), 2))  # 2 is for the metrics auroc and auprc
+    if binary_outcome:
+        perf_metric = np.zeros((args.number_runs, 2))  # 2 is for the metrics auroc and auprc
+    else:
+        perf_metric = np.zeros((args.number_runs, 5))  # 5 is for the metrics corr, corr_p, R2, MAE, MSE
 
     if eval('args.onlyEval')==True:
         with open(path_to_dir + combined_Result_filename, 'r') as file: metrics = file.read()
@@ -252,7 +258,8 @@ if __name__ == '__main__':
             best_dict_local['model_params'] = config
             best_dict_local['train_orlogids'] = out_df[out_df['train_id_or_not']==1]['orlogid_encoded'].values.tolist()
             best_dict_local['test_orlogids'] = out_df[out_df['train_id_or_not']==0]['orlogid_encoded'].values.tolist()
-            best_dict_local['outcome_rate'] = np.round(test_labels.mean(),decimals=4)
+            if binary_outcome:
+                best_dict_local['outcome_rate'] = np.round(test_labels.mean(),decimals=4)
 
             # this is saving the true and predicted y for each run because the test set is the same
             if count_num == 0:
@@ -372,13 +379,11 @@ if __name__ == '__main__':
 
             train_labels = train_labels.reshape(train_labels.shape[0])
             test_labels = test_labels.reshape(test_labels.shape[0])
-            if eval(args.bestModel) == True:
-                device = init_dl_program(args.gpu, seed=current_seed_val, max_threads=args.max_threads)
-            else:
-                device = init_dl_program(args.gpu, seed=current_seed_val, max_threads=args.max_threads)
+
+            device = init_dl_program(args.gpu, seed=current_seed_val, max_threads=args.max_threads)
 
             # direct xgbt on the modalitites
-            if (args.withoutCL == True):
+            if (args.withoutCL == True):  ## this is not being used here
                 out, out_tr, eval_res = eval_classification_noCL(proc_modality_dict_train, train_labels,
                                                                  proc_modality_dict_test, test_labels,
                                                                  args.outcome, current_seed_val)
@@ -395,22 +400,29 @@ if __name__ == '__main__':
                     n_iters=args.iters,
                     verbose=True
                 )
-                # breakpoint()
                 # association_metrics_dictRel, association_metrics_dictInter = model.associationBTWalertsANDrestmodalities(proc_modality_dict_test)
                 metadata_file = dir_name + '/BestModel_metadata' + str(config['seed_used']) +  '_'+args.outcome + '.json'
                 with open(metadata_file, 'w') as outfile: json.dump(config, outfile)
 
                 # not passing the alert data to the classification model because this modality would not be available at test time
-                if args.eval:
+                if binary_outcome:
                     preds_te, preds_tr, eval_res = eval_classification_sep1(model, proc_modality_dict_train, train_labels, proc_modality_dict_test, test_labels,args.all_rep, args.outcome, int(current_seed_val))
+                else:
+                    preds_te, preds_tr, eval_res = eval_regression_sep1(model, proc_modality_dict_train, train_labels, proc_modality_dict_test, test_labels,args.all_rep, args.outcome, int(current_seed_val))
 
             pkl_save(f'{dir_name}/{current_seed_val}_out_tr.pkl', preds_tr)  # test set labels and the predictions are already being saved so saving the tr only
             pkl_save(f'{dir_name}/{current_seed_val}_label_tr.pkl', train_labels)
             print('Evaluation result:', eval_res)
 
-
-            perf_metric[runNum, 0] = eval_res['auroc']
-            perf_metric[runNum, 1] = eval_res['auprc']
+            if binary_outcome:
+                perf_metric[runNum, 0] = eval_res['auroc']
+                perf_metric[runNum, 1] = eval_res['auprc']
+            else:
+                perf_metric[runNum, 0] = eval_res['CorVal']
+                perf_metric[runNum, 1] = eval_res['cor_p_value']
+                perf_metric[runNum, 2] = eval_res['r2value']
+                perf_metric[runNum, 3] = eval_res['mae']
+                perf_metric[runNum, 4] = eval_res['mse']
 
             if eval(args.bestModel) == True:
                 best_dict_local['randomSeed'] = int(best_5_random_number[runNum])
@@ -420,30 +432,36 @@ if __name__ == '__main__':
                 best_dict_local['model_params'] = config
                 best_dict_local['train_orlogids'] = outcome_with_orlogid.iloc[id_tuple[0]]["orlogid_encoded"].values.tolist()
                 best_dict_local['test_orlogids'] = outcome_with_orlogid.iloc[id_tuple[1]]["orlogid_encoded"].values.tolist()
-                best_dict_local['outcome_rate'] = np.round(outcome_with_orlogid.iloc[id_tuple[1]]["outcome"].mean(), decimals=4)
+                if binary_outcome:
+                    best_dict_local['outcome_rate'] = np.round(outcome_with_orlogid.iloc[id_tuple[1]]["outcome"].mean(), decimals=4)
                 # this is saving the true and predicted y for each run because the test set is the same
                 if runNum==0:
                     outcome_with_pred_test = outcome_with_orlogid.iloc[id_tuple[1]]
                     outcome_with_pred_test = outcome_with_pred_test.rename(columns={'outcome': 'y_true'})
-                    outcome_with_pred_test['y_pred_' + str(int(best_5_random_number[runNum]))] = preds_te[:, 1]
+                    if binary_outcome:
+                        outcome_with_pred_test['y_pred_' + str(int(best_5_random_number[runNum]))] = preds_te[:, 1]
+                    else:
+                        outcome_with_pred_test['y_pred_' + str(int(best_5_random_number[runNum]))] = preds_te
                 else:
-                    outcome_with_pred_test['y_pred_' + str(int(best_5_random_number[runNum]))] = preds_te[:, 1]
+                    if binary_outcome:
+                        outcome_with_pred_test['y_pred_' + str(int(best_5_random_number[runNum]))] = preds_te[:, 1]
+                    else:
+                        outcome_with_pred_test['y_pred_' + str(int(best_5_random_number[runNum]))] = preds_te
                 dict_key = 'run_randomSeed_' + str(int(best_5_random_number[runNum]))  # this is so dumb because it wont take the key dynamically
                 best_metadata_dict[dict_key] = best_dict_local
 
-            fpr_roc, tpr_roc, thresholds_roc = roc_curve(test_labels, preds_te[:, 1], drop_intermediate=False)
-            precision_prc, recall_prc, thresholds_prc = precision_recall_curve(test_labels, preds_te[:, 1])
-            # interpolation in ROC
-            mean_fpr = np.linspace(0, 1, 100)
-            tpr_inter = np.interp(mean_fpr, fpr_roc, tpr_roc)
-            mean_fpr = np.round(mean_fpr, decimals=2)
-            print("Sensitivity at 90%  specificity is ", np.round(tpr_inter[np.where(mean_fpr == 0.10)], 2))
+            if binary_outcome:
+                fpr_roc, tpr_roc, thresholds_roc = roc_curve(test_labels, preds_te[:, 1], drop_intermediate=False)
+                precision_prc, recall_prc, thresholds_prc = precision_recall_curve(test_labels, preds_te[:, 1])
+                # interpolation in ROC
+                mean_fpr = np.linspace(0, 1, 100)
+                tpr_inter = np.interp(mean_fpr, fpr_roc, tpr_roc)
+                mean_fpr = np.round(mean_fpr, decimals=2)
+                print("Sensitivity at 90%  specificity is ", np.round(tpr_inter[np.where(mean_fpr == 0.10)], 2))
 
             t = time.time() - t
             print(f"\ntime taken to finish run number: {datetime.timedelta(seconds=t)}\n")
 
-
-    # breakpoint()
     print("Tranquila")
 
     # saving metadata for all best runs in json; decided to save it also as pickle because the nested datatypes were not letting it be serializable
