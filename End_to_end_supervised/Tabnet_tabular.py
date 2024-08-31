@@ -77,11 +77,11 @@ if eval('args.pmhProblist') == True:
 if eval('args.homemeds') == True:
     modality_to_use.append('homemeds')
 
-data_dir = '/mnt/ris/ActFastExports/v1.3.2/'
-# data_dir = '/input/'
+# data_dir = '/mnt/ris/ActFastExports/v1.3.2/'
+data_dir = '/input/'
 
-out_dir = './'
-# out_dir = '/output/'
+# out_dir = './'
+out_dir = '/output/'
 
 preops = pd.read_csv(data_dir + 'epic_preop.csv')
 outcomes = pd.read_csv(data_dir + 'epic_outcomes.csv')
@@ -261,9 +261,11 @@ if 'problist' in modality_to_use:
 
 best_5_random_number = []  # this will take the args when directly run otherwise it will read the number from the file namee
 if eval(args.bestModel) ==True:
-    path_to_dir = '../HP_output/'
-    sav_dir = '../Best_results/Preoperative/'
+    # path_to_dir = '../HP_output/'
+    # sav_dir = '../Best_results/Preoperative/'
     # best_file_name= path_to_dir + 'Best_trial_resulticu_TabNet_modal__preops_cbow_pmh_problist_homemeds174_24-07-17-10:55:55.json'
+    path_to_dir = out_dir + 'HP_output/'
+    sav_dir = out_dir + 'Best_results/Preoperative/'
     file_names = os.listdir(path_to_dir)
     import re
     best_5_names = []

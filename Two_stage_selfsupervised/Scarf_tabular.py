@@ -80,11 +80,11 @@ if eval('args.pmhProblist') == True:
 if eval('args.homemeds') == True:
     modality_to_use.append('homemeds')
 
-data_dir = '/mnt/ris/ActFastExports/v1.3.2/'
-# data_dir = '/input/'
+# data_dir = '/mnt/ris/ActFastExports/v1.3.2/'
+data_dir = '/input/'
 
-out_dir = './'
-# out_dir = '/output/'
+# out_dir = './'
+out_dir = '/output/'
 
 preops = pd.read_csv(data_dir + 'epic_preop.csv')
 outcomes = pd.read_csv(data_dir + 'epic_outcomes.csv')
@@ -264,9 +264,11 @@ if 'problist' in modality_to_use:
 
 best_5_random_number = []  # this will take the args when directly run otherwise it will read the number from the file namee
 if eval(args.bestModel) ==True:
-    path_to_dir = '/home/trips/PeriOperative_RiskPrediction/HP_output/'
-    sav_dir = '/home/trips/PeriOperative_RiskPrediction/Best_results/Preoperative/'
+    # path_to_dir = '/home/trips/PeriOperative_RiskPrediction/HP_output/'
+    # sav_dir = '/home/trips/PeriOperative_RiskPrediction/Best_results/Preoperative/'
     # best_file_name= path_to_dir + 'Best_trial_resulticu_TabNet_modal__preops_cbow_pmh_problist_homemeds174_24-07-17-10:55:55.json'
+    path_to_dir = out_dir + 'HP_output/'
+    sav_dir = out_dir + 'Best_results/Preoperative/'
     file_names = os.listdir(path_to_dir)
     best_5_names = []
 
@@ -360,6 +362,8 @@ for runNum in range(len(best_5_random_number)):
         bow_input['BOW_NA'] = np.where(np.isnan(bow_input[bow_cols[0]]), 1, 0)
         bow_input.fillna(0, inplace=True)
 
+        if eval(args.bestModel) == True: ## this is being done to make sure that we have metadata when predicting on wave2
+            out_dir = sav_dir
 
         # currently sacrificing 5 data points in the valid set and using the test set to finally compute the auroc etc
         preops_tr, preops_val, preops_te, train_index, valid_index, test_index, preops_mask = preprocess_train(preops.copy(deep=True),  # this deep = True is needed otherwise preops df is changing
