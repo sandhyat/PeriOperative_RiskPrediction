@@ -677,7 +677,7 @@ for runNum in range(len(best_5_random_number)):
         with open(feature_filename, 'w') as txt_to_write:
             txt_to_write.write(str(features))
 
-        saving_path_name = dir_name +  'XGBT_BestModel_' + str(int(best_5_random_number[runNum])) + "_" + modal_name + ".json"
+        saving_path_name = dir_name +  'XGBTtsSum_BestModel_' + str(int(best_5_random_number[runNum])) + "_" + modal_name + ".json"
         if binary_outcome:
             clf.save_model(saving_path_name)
         else:
