@@ -558,49 +558,49 @@ for runNum in range(len(best_5_random_number)):
 
     if 'flow' in modality_to_use:
 
-        very_dense_flow_stat = very_dense_flow_stat.merge(new_index, on="orlogid_encoded", how="inner").set_index('new_person').reindex(list(range(preops.index.min(), preops.index.max() + 1)), fill_value=0).reset_index().drop(["orlogid_encoded"], axis=1).rename(
+        very_dense_flow_stat1 = very_dense_flow_stat.copy().merge(new_index, on="orlogid_encoded", how="inner").set_index('new_person').reindex(list(range(preops.index.min(), preops.index.max() + 1)), fill_value=0).reset_index().drop(["orlogid_encoded"], axis=1).rename(
             {"new_person": "person_integer"}, axis=1).sort_values(["person_integer"]).reset_index(drop=True).drop(["person_integer"], axis=1)
 
-        very_denseflow_tr = very_dense_flow_stat.iloc[train_index]
-        very_denseflow_te = very_dense_flow_stat.iloc[test_index]
-        very_denseflow_val = very_dense_flow_stat.iloc[valid_index]
-        very_denseflow_input_dim = len(very_dense_flow_stat.columns)
+        very_denseflow_tr = very_dense_flow_stat1.iloc[train_index]
+        very_denseflow_te = very_dense_flow_stat1.iloc[test_index]
+        very_denseflow_val = very_dense_flow_stat1.iloc[valid_index]
+        very_denseflow_input_dim = len(very_dense_flow_stat1.columns)
 
         train_set.append(very_denseflow_tr)
         valid_set.append(very_denseflow_val)
         test_set.append(very_denseflow_te)
 
-        features = features + list(very_dense_flow_stat.columns)
+        features = features + list(very_dense_flow_stat1.columns)
 
 
-        other_intra_flow_wlabs_stat = other_intra_flow_wlabs_stat.merge(new_index, on="orlogid_encoded", how="inner").set_index('new_person').reindex(list(range(preops.index.min(), preops.index.max() + 1)), fill_value=0).reset_index().drop(["orlogid_encoded"], axis=1).rename(
+        other_intra_flow_wlabs_stat1 = other_intra_flow_wlabs_stat.copy().merge(new_index, on="orlogid_encoded", how="inner").set_index('new_person').reindex(list(range(preops.index.min(), preops.index.max() + 1)), fill_value=0).reset_index().drop(["orlogid_encoded"], axis=1).rename(
             {"new_person": "person_integer"}, axis=1).sort_values(["person_integer"]).reset_index(drop=True).drop(["person_integer"], axis=1)
 
-        otherflow_tr = other_intra_flow_wlabs_stat.iloc[train_index]
-        otherflow_te = other_intra_flow_wlabs_stat.iloc[test_index]
-        otherflow_val = other_intra_flow_wlabs_stat.iloc[valid_index]
-        otherflow_input_dim = len(other_intra_flow_wlabs_stat.columns)
+        otherflow_tr = other_intra_flow_wlabs_stat1.iloc[train_index]
+        otherflow_te = other_intra_flow_wlabs_stat1.iloc[test_index]
+        otherflow_val = other_intra_flow_wlabs_stat1.iloc[valid_index]
+        otherflow_input_dim = len(other_intra_flow_wlabs_stat1.columns)
 
         train_set.append(otherflow_tr)
         valid_set.append(otherflow_val)
         test_set.append(otherflow_te)
 
-        features = features + list(other_intra_flow_wlabs_stat.columns)
+        features = features + list(other_intra_flow_wlabs_stat1.columns)
 
     if 'meds' in modality_to_use:
 
-        all_med_data_stat = all_med_data_stat.merge(new_index, on="orlogid_encoded", how="inner").set_index('new_person').reindex(list(range(preops.index.min(), preops.index.max() + 1)), fill_value=0).reset_index().drop(["orlogid_encoded"], axis=1).rename({"new_person": "person_integer"}, axis=1).sort_values(["person_integer"]).reset_index(drop=True).drop(["person_integer"], axis=1)
+        all_med_data_stat1 = all_med_data_stat.copy().merge(new_index, on="orlogid_encoded", how="inner").set_index('new_person').reindex(list(range(preops.index.min(), preops.index.max() + 1)), fill_value=0).reset_index().drop(["orlogid_encoded"], axis=1).rename({"new_person": "person_integer"}, axis=1).sort_values(["person_integer"]).reset_index(drop=True).drop(["person_integer"], axis=1)
 
-        meds_tr = all_med_data_stat.iloc[train_index]
-        meds_te = all_med_data_stat.iloc[test_index]
-        meds_val = all_med_data_stat.iloc[valid_index]
-        meds_input_dim = len(all_med_data_stat.columns)
+        meds_tr = all_med_data_stat1.iloc[train_index]
+        meds_te = all_med_data_stat1.iloc[test_index]
+        meds_val = all_med_data_stat1.iloc[valid_index]
+        meds_input_dim = len(all_med_data_stat1.columns)
 
         train_set.append(meds_tr)
         valid_set.append(meds_val)
         test_set.append(meds_te)
 
-        features = features + list(all_med_data_stat.columns)
+        features = features + list(all_med_data_stat1.columns)
 
     train_data = np.concatenate(train_set, axis=1)
     valid_data = np.concatenate(valid_set,axis=1)
