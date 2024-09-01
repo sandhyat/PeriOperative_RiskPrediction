@@ -727,7 +727,7 @@ metadata_filename = dir_name + '/Best_runs_metadata.pickle'
 with open(metadata_filename, 'wb') as outfile: pickle.dump(best_metadata_dict, outfile)
 
 # saving the performance metrics from all best runs and all models in a pickle file
-perf_filename = sav_dir + str(args.task) + '_Best_perf_metrics_combined_preoperative.pickle'
+perf_filename = sav_dir + str(args.task) + '_Best_perf_metrics_combined_intraoperative.pickle'
 if not os.path.exists(perf_filename):
     data= {}
     data[str(args.modelType)] = {modal_name:perf_metric}
@@ -746,7 +746,7 @@ else:
     with open(perf_filename, 'wb') as file: pickle.dump(existing_data, file)
 
 # saving the test set predictions for all models and all runs
-pred_filename = sav_dir + str(args.task) + '_Best_pred_combined_preoperative.pickle'
+pred_filename = sav_dir + str(args.task) + '_Best_pred_combined_intraoperative.pickle'
 if not os.path.exists(pred_filename):
     data= {}
     data[str(args.modelType)] = {modal_name:outcome_with_pred_test.values}
