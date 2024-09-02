@@ -924,7 +924,7 @@ def objective(trial, args):
         os_flag = False
 
 
-    num_epochs = 25
+    num_epochs = 5
     print("Started one trial")
     for epoch in range(num_epochs):  # setting a max of 25/50 on the number of epochs
         loss_tr = 0
