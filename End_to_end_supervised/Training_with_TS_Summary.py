@@ -328,8 +328,9 @@ if eval(args.bestModel) ==True:
     pattern_text = r'[a-zA-Z]+'
     modal_name = 'DataModal'
     for i in range(len(modality_to_use)):
+        if (modality_to_use[i] != 'cbow'):
+            modal_name = modal_name + "_" + modality_to_use[i]
         best_5_initial_name = best_5_initial_name + "_" + modality_to_use[i]
-        modal_name = modal_name + "_" + modality_to_use[i]
 
     dir_name = sav_dir + args.modelType + '/' + modal_name + "_" + str(args.task) +"/"
 
