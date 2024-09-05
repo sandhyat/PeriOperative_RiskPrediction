@@ -22,6 +22,7 @@ import pickle
 import ast
 from datetime import datetime
 from End_to_end_supervised import preprocess_inference
+from End_to_end_supervised import preop_flow_med_bow_model
 
 parser = argparse.ArgumentParser(description='TS modular model validation in wave2')
 
@@ -198,7 +199,7 @@ if args.task == 'post_dialysis':
 combined_case_set = list(set(outcome_df_wave2["orlogid_encoded"].values).intersection(
     set(end_of_case_times['orlogid_encoded'].values)).intersection(set(preops_wave2['orlogid_encoded'].values)))
 
-if False:
+if True:
     combined_case_set = np.random.choice(combined_case_set, 1000, replace=False)
 
 end_of_case_times = end_of_case_times.loc[end_of_case_times['orlogid_encoded'].isin(combined_case_set)]
@@ -207,6 +208,8 @@ outcome_df_wave2 = outcome_df_wave2.loc[outcome_df_wave2['orlogid_encoded'].isin
 outcome_df_wave2.set_axis(["orlogid_encoded", "outcome"], axis=1, inplace=True)
 
 new_index = outcome_df_wave2["orlogid_encoded"].copy().reset_index().rename({"index": "new_person"}, axis=1)  # this will serve as a good baseline to select cases with outcomes
+
+endtimes = end_of_case_times.merge(new_index, on="orlogid_encoded", how="inner").reindex(new_index.set_index('new_person').index,fill_value=0).reset_index(drop=True).drop(columns=['orlogid_encoded'], axis=1)
 
 preops_wave2 = preops_wave2.loc[preops_wave2['orlogid_encoded'].isin(combined_case_set)]
 
@@ -279,8 +282,8 @@ if 'meds' in modality_to_use:
     all_med_data = all_med_data.loc[all_med_data['endtime'] > all_med_data['time']]
     all_med_data.drop(["endtime"], axis=1, inplace=True)
 
-# model_list = ['XGBTtsSum', 'lstm', 'lstm']
-model_list = ['XGBTtsSum']
+# model_list = ['XGBTtsSum', 'lstm', 'MVCL']
+model_list = ['lstm']
 
 sav_dir = out_dir + 'Best_results/Intraoperative/'
 file_names = os.listdir(sav_dir)
@@ -299,9 +302,98 @@ for m_name in model_list:
         modal_name = modal_name + "_" + modality_to_use[i]
     dir_name = sav_dir + m_name + '/' + modal_name + "_" + str(args.task) +"/"
 
-    if m_name=='lstm':
-        print("TO be filled")
+    if (m_name=='lstm') or (m_name=='MVCL'):
+        if 'flow' in modality_to_use:
+            very_dense_flow = very_dense_flow.copy().merge(new_index, on="orlogid_encoded", how="inner").reindex(new_index.set_index('new_person').index,fill_value=0).reset_index(drop=True).drop(columns=['orlogid_encoded'], axis=1)
 
+            other_intra_flow_wlabs = other_intra_flow_wlabs.copy().merge(new_index, on="orlogid_encoded", how="inner").reindex(new_index.set_index('new_person').index,fill_value=0).reset_index(drop=True).drop(columns=['orlogid_encoded'], axis=1)
+
+            breakpoint()
+            """ TS flowsheet proprocessing """
+            # need to convert the type of orlogid_encoded from object to int
+            other_intra_flow_wlabs['new_person'] = other_intra_flow_wlabs['new_person'].astype('int')
+            very_dense_flow['new_person'] = very_dense_flow['new_person'].astype('int')
+
+            index_med_other_flow = torch.tensor(
+                other_intra_flow_wlabs[['new_person', 'timepoint', 'measure_index']].values, dtype=int)
+            value_med_other_flow = torch.tensor(other_intra_flow_wlabs['VALUE'].values)
+            flowsheet_other_flow = torch.sparse_coo_tensor(torch.transpose(index_med_other_flow, 0, 1),
+                                                           value_med_other_flow, dtype=torch.float32)
+
+            index_med_very_dense = torch.tensor(
+                very_dense_flow[['new_person', 'timepoint', 'measure_index']].values, dtype=int)
+            value_med_very_dense = torch.tensor(very_dense_flow['VALUE'].values)
+            flowsheet_very_dense_sparse_form = torch.sparse_coo_tensor(torch.transpose(index_med_very_dense, 0, 1),
+                                                                       value_med_very_dense,
+                                                                       dtype=torch.float32)  ## this is memory heavy and could be skipped, only because it is making a copy not really because it is harder to store
+            flowsheet_very_dense = flowsheet_very_dense_sparse_form.to_dense()
+            flowsheet_very_dense = torch.cumsum(flowsheet_very_dense, dim=1)
+
+        if 'meds' in modality_to_use:
+            ## Special med * unit comb encoding
+            all_med_data['med_unit_comb'] = list(zip(all_med_data['med_integer'], all_med_data['unit_integer']))
+            med_unit_coded, med_unit_unique_codes = pd.factorize(all_med_data['med_unit_comb'])
+            all_med_data['med_unit_comb'] = med_unit_coded
+
+            a = pd.DataFrame(columns=['med_integer', 'unit_integer', 'med_unit_combo'])
+            a['med_integer'] = [med_unit_unique_codes[i][0] for i in range(len(med_unit_unique_codes))]
+            a['unit_integer'] = [med_unit_unique_codes[i][1] for i in range(len(med_unit_unique_codes))]
+            a['med_unit_combo'] = np.arange(len(med_unit_unique_codes))
+            a.sort_values(by=['med_integer', 'med_unit_combo'], inplace=True)
+
+            group_start = (torch.tensor(a['med_integer']) != torch.roll(torch.tensor(a['med_integer']),
+                                                                        1)).nonzero().squeeze() + 1  # this one is needed becasue otherwise there was some incompatibbility while the embeddginff for the combination are being created.
+            group_end = (torch.tensor(a['med_integer']) != torch.roll(torch.tensor(a['med_integer']),
+                                                                      -1)).nonzero().squeeze() + 1  # this one is needed becasue otherwise there was some incompatibbility while the embeddginff for the combination are being created.
+
+            group_start = torch.cat((torch.tensor(0).reshape((1)),
+                                     group_start))  # prepending 0 to make sure that it is treated as an empty slot
+            group_end = torch.cat((torch.tensor(0).reshape((1)),
+                                   group_end))  # prepending 0 to make sure that it is treated as an empty slot
+
+            drug_med_ids = all_med_data[['orlogid_encoded', 'time', 'drug_position', 'med_integer']]
+
+            drug_med_id_map = feather.read_feather(data_dir + 'med_ts/med_id_map.feather')
+            drug_words = None
+            word_id_map = None
+
+            # drug_dose = all_med_data[['orlogid_encoded', 'time', 'drug_position', 'unit_integer',
+            #                           'dose']]
+            drug_dose = all_med_data[['orlogid_encoded', 'time', 'drug_position', 'med_unit_comb',
+                                      'dose']]  # replacing the unit_integer column by med_unit_comb column
+
+            unit_id_map = feather.read_feather(data_dir + 'med_ts/unit_id_map.feather')
+            # vocab_len_units = len(unit_id_map)
+            # vocab_len_units = len(med_unit_unique_codes)  # replacing  len(unit_id_map) by len(med_unit_unique_codes)
+
+            drug_dose = drug_dose.merge(new_index, on="orlogid_encoded", how="inner").reindex(new_index.set_index('new_person').index,fill_value=0).reset_index(drop=True).drop(columns=['orlogid_encoded'], axis=1)
+
+
+            if drug_words is not None:
+                drug_words = drug_words.merge(new_index, on="orlogid_encoded", how="inner").reindex(new_index.set_index('new_person').index,fill_value=0).reset_index(drop=True).drop(columns=['orlogid_encoded'], axis=1)
+
+            if drug_med_ids is not None:
+                drug_med_ids = drug_med_ids.merge(new_index, on="orlogid_encoded", how="inner").reindex(new_index.set_index('new_person').index,fill_value=0).reset_index(drop=True).drop(columns=['orlogid_encoded'], axis=1)
+
+            breakpoint()
+            ## I suppose these could have sorted differently
+            ## TODO apparently, torch.from_numpy shares the memory buffer and inherits type
+            index_med_ids = torch.tensor(drug_med_ids[['new_person', 'time', 'drug_position']].values, dtype=int)
+            index_med_dose = torch.tensor(drug_dose[['new_person', 'time', 'drug_position']].values, dtype=int)
+            value_med_dose = torch.tensor(drug_dose['dose'].astype('float').values, dtype=float)
+            value_med_unit = torch.tensor(drug_dose['med_unit_comb'].values, dtype=int)
+
+            add_unit = 0 in value_med_unit.unique()
+            dense_med_units = torch.sparse_coo_tensor(torch.transpose(index_med_dose, 0, 1), value_med_unit + add_unit,
+                                                      dtype=torch.int32)
+            dense_med_dose = torch.sparse_coo_tensor(torch.transpose(index_med_dose, 0, 1), value_med_dose,
+                                                     dtype=torch.float32)
+
+            value_med_ids = torch.tensor(drug_med_ids['med_integer'].values, dtype=int)
+            add_med = 0 in value_med_ids.unique()
+            dense_med_ids = torch.sparse_coo_tensor(torch.transpose(index_med_ids, 0, 1), value_med_ids + add_med,
+                                                    dtype=torch.int32)
+    breakpoint()
     if m_name=='MVCL':
         print("TO be filled")
 
@@ -405,9 +497,16 @@ for m_name in model_list:
     for runNum in range(len(best_5_random_number)):
 
         test_set = []
+        if m_name=='lstm':
+            data_te = {}
+            data_te['outcomes'] = torch.tensor(outcome_df_wave2["outcome"].values)
+            data_te['endtimes'] = torch.tensor(endtimes["endtime"].values, dtype=int)
         if 'preops' in modality_to_use:
             test_set.append(processed_preops_wave2)
             test_set.append(cbow_wave2)
+            if m_name=='lstm':
+                data_te['preops'] = torch.tensor(processed_preops_wave2.to_numpy(), dtype=torch.float32)
+                data_te['cbow'] = torch.tensor(cbow_wave2.to_numpy(), dtype=torch.float32)
 
         if 'homemeds' in modality_to_use:
             hm_reading_form = existing_data['run_randomSeed_'+str(int(best_5_random_number[runNum]))]['hm_form']
@@ -415,27 +514,38 @@ for m_name in model_list:
                 home_meds_final = home_meds_ohe
             if hm_reading_form == 'embedding_sum':
                 home_meds_final = home_meds_sum.copy().drop(["rxcui"], axis=1)
+            if m_name=='lstm':
+                hm_reading_form='embedding_sum'  # because this choice was used for hp tuning lstms
+                data_te['homemeds'] = torch.tensor(home_meds_final.to_numpy(), dtype=torch.float32)
 
             test_set.append(home_meds_final)
 
         if 'pmh' in modality_to_use:
             new_name_pmh = ['pmh_sherbet'+str(num) for num in range(len(pmh_emb_sb.columns))]
             dict_name = dict(zip(pmh_emb_sb.columns,new_name_pmh ))
+            if m_name=='lstm':
+                data_te['pmh']=torch.tensor(pmh_emb_sb.copy().rename(columns=dict_name).to_numpy(), dtype=torch.float32)
             test_set.append(pmh_emb_sb.copy().rename(columns=dict_name))
 
         if 'problist' in modality_to_use:
             new_name_prbl = ['prbl_sherbet'+str(num) for num in range(len(prob_list_emb_sb.columns))]
             dict_name = dict(zip(prob_list_emb_sb.columns,new_name_prbl ))
+            if m_name=='lstm':
+                data_te['problist']=torch.tensor(prob_list_emb_sb.copy().rename(columns=dict_name).to_numpy(), dtype=torch.float32)
             test_set.append(prob_list_emb_sb.copy().rename(columns=dict_name))
 
         if 'flow' in modality_to_use:
             if m_name=='XGBTtsSum':
                 test_set.append(very_dense_flow_stat1)
                 test_set.append(other_intra_flow_wlabs_stat1)
+            if m_name=='lstm':
+                data_te['flow'] = [flowsheet_very_dense,flowsheet_other_flow.coalesce()]
 
         if 'meds' in modality_to_use:
             if m_name=='XGBTtsSum':
                 test_set.append(all_med_data_stat1)
+            if m_name == 'lstm':
+                data_te['meds'] = [dense_med_ids.coalesce(), dense_med_dose, dense_med_units]
 
         y_test = outcome_df_wave2["outcome"].values
 
@@ -464,6 +574,69 @@ for m_name in model_list:
                 pred_y_test = pred_y_test[:, 1]
             else:
                 pred_y_test = model.predict(test_data)
+
+        if m_name=='lstm':
+            device = torch.device('cuda')
+            config = existing_data['run_randomSeed_' + str(int(best_5_random_number[runNum]))]['model_params']
+            breakpoint()
+            model = preop_flow_med_bow_model.TS_lstm_Med_index(**config).to(device)
+
+            saving_path_name = existing_data['run_randomSeed_' + str(int(best_5_random_number[runNum]))]['model_file_path']
+            # saving_path_name = dir_name + 'BestModel_' + str(int(best_5_random_number[runNum])) + "_" + modal_name + ".pkl"
+            state_dict = torch.load(saving_path_name, map_location=device)
+            model.load_state_dict(state_dict)
+
+            model.eval()
+            true_y_test = []
+            pred_y_test = []
+            breakpoint()
+            batchsize = 32
+            # nbatch = data_te['outcomes'].shape[0] // batchsize
+            nbatch, remain_batch = divmod(data_te['outcomes'].shape[0], batchsize)
+            if remain_batch > 0:
+                nbatch = nbatch + 1  # this is being done to make sure all the test data is being used when the test set size is not a multiple of batchsize
+            for i in range(nbatch):
+
+                if (remain_batch > 0) and (i == nbatch - 1):
+                    these_index = torch.tensor(list(range(i * batchsize, (i * batchsize) + remain_batch)), dtype=int)
+                else:
+                    these_index = torch.tensor(list(range(i * batchsize, (i + 1) * batchsize)), dtype=int)
+                local_data = {}
+                for k in data_te.keys():
+                    if type(data_te[k]) != list:
+                        local_data[k] = torch.index_select(data_te[k], 0, these_index)
+                    else:
+                        local_data[k] = [torch.index_select(x, 0, these_index) for x in data_te[k]]
+
+                if args.task == 'endofcase':
+                    local_data[1] = torch.hstack([local_data[1][:int(len(these_index) / 2)], local_data[-1][int(
+                        len(these_index) / 2):]])  # using hstack because vstack leads to two seperate tensors
+                    local_data[0][:, -1] = local_data[
+                        1]  # this is being done because the last column has the current times which will be t1 timepoint for the second half of the batch
+                    local_data[-1] = torch.from_numpy(
+                        np.repeat([1, 0], [int(batchsize / 2), batchsize - int(batchsize / 2)]))
+                if (args.includeMissingnessMasks):  # appending the missingness masks in test data
+                    if 'preops' in modality_to_use:
+                        local_data['preops'] = [local_data['preops'],
+                                                torch.tensor(preops_te_mask.iloc[these_index].to_numpy(),
+                                                             dtype=torch.float32)]
+                    if 'flow' in modality_to_use:
+                        local_data['flow'].append(very_dense_te_mask[these_index, :, :])
+                        sparse_mask = torch.sparse_coo_tensor(local_data['flow'][1]._indices(),
+                                                              np.ones(len(local_data['flow'][1]._values())),
+                                                              local_data['flow'][1].size())
+                        local_data['flow'].append(sparse_mask)
+
+                data_valid, mod_order_dict = preop_flow_med_bow_model.collate_time_series(local_data, device)
+
+                y_pred, reg_loss = model(data_valid[0])
+                # values from the last epoch; it will get overwritten
+                # using test data only instead of validation data for evaluation currently because the validation will be done on a seperate data
+                true_y_test.append(data_valid[1].float().detach().numpy())
+                pred_y_test.append(y_pred.squeeze(-1).cpu().detach().numpy())
+
+            y_test = np.concatenate(true_y_test)
+            pred_y_test = np.concatenate(pred_y_test)
 
         if binary_outcome:
             test_auroc = roc_auc_score(y_test, pred_y_test)
