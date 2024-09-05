@@ -66,11 +66,11 @@ if eval('args.homemeds') == True:
     modality_to_use.append('homemeds')
 
 
-data_dir = '/mnt/ris/ActFastExports/v1.3.2/'
-# data_dir = '/input/'
+# data_dir = '/mnt/ris/ActFastExports/v1.3.2/'
+data_dir = '/input/'
 
-out_dir = './'
-# out_dir = '/output/'
+# out_dir = './'
+out_dir = '/output/'
 
 
 to_drop_old_pmh_problist  = ["MentalHistory_anxiety", "MentalHistory_bipolar", "MentalHistory_depression",
@@ -246,10 +246,11 @@ if 'problist' in modality_to_use:
     prob_list_emb_sb = prob_list_emb_sb.merge(new_index, on="orlogid_encoded", how="inner").set_index('new_person').reindex(new_index.set_index('new_person').index,fill_value=0).reset_index(drop=True).drop(columns=['orlogid_encoded'], axis=1)
 
 
-model_list = ['XGBT', 'TabNet', 'Scarf']
-# model_list = ['TabNet']
+# model_list = ['XGBT', 'TabNet', 'Scarf']
+model_list = ['XGBT', 'Scarf']
 
-sav_dir = './Best_results/Preoperative/'
+# sav_dir = './Best_results/Preoperative/'
+sav_dir = out_dir + 'Best_results/Preoperative/'
 # best_file_name= path_to_dir + 'Best_trial_resulticu_TabNet_modal__preops_cbow_pmh_problist_homemeds174_24-07-17-10:55:55.json'
 file_names = os.listdir(sav_dir)
 
@@ -473,8 +474,8 @@ for m_name in model_list:
             perf_metric[runNum, 0] = test_auroc
             perf_metric[runNum, 1] = test_auprc
         else:
-            corr_value = np.round(pearsonr(np.array(y_test.reshape(-1, 1)), np.array(pred_y_test))[0], 3)
-            cor_p_value = np.round(pearsonr(np.array(y_test.reshape(-1, 1)), np.array(pred_y_test))[1], 3)
+            corr_value = np.round(pearsonr(np.array(y_test), np.array(pred_y_test))[0], 3)
+            cor_p_value = np.round(pearsonr(np.array(y_test), np.array(pred_y_test))[1], 3)
             print(str(args.task) + " prediction with correlation ", corr_value, ' and corr p value of ', cor_p_value)
             r2value = r2_score(np.array(y_test), np.array(pred_y_test))  # inbuilt function also exists for R2
             print(" Value of R2 ", r2value)
@@ -489,8 +490,8 @@ for m_name in model_list:
             print("MAE on the test set ", mae_full)
             print("MSE on the test set ", mse_full)
 
-            perf_metric[runNum, 0] = corr_value[0]
-            perf_metric[runNum, 1] = cor_p_value[0]
+            perf_metric[runNum, 0] = corr_value
+            perf_metric[runNum, 1] = cor_p_value
             perf_metric[runNum, 2] = r2value
             perf_metric[runNum, 3] = mae_full
             perf_metric[runNum, 4] = mse_full
@@ -498,6 +499,27 @@ for m_name in model_list:
         print(perf_metric)
 
     print("Final performance metric", perf_metric)
+    breakpoint()
+    # saving the performance metrics from all best runs and all models in a pickle file
+    perf_filename = sav_dir + str(args.task) + '_Best_perf_metrics_combined_preoperativeWave2.pickle'
+    if not os.path.exists(perf_filename):
+        data = {}
+        data[str(m_name)] = {modal_name: perf_metric}
+        with open(perf_filename, 'wb') as file:
+            pickle.dump(data, file)
+    else:
+        with open(perf_filename, 'rb') as file:
+            existing_data = pickle.load(file)
+
+        try:
+            existing_data[str(m_name)][modal_name] = perf_metric
+        except(KeyError):  # this is to take care of the situation when a new model is added to the file
+            existing_data[str(m_name)] = {}
+            existing_data[str(m_name)][modal_name] = perf_metric
+
+        # Save the updated dictionary back to the pickle file
+        with open(perf_filename, 'wb') as file:
+            pickle.dump(existing_data, file)
 
     print(" Model type :", m_name, " Modal name: ", modal_name, "  Finished for wave 2" )
     breakpoint()
