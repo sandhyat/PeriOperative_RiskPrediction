@@ -178,15 +178,18 @@ if __name__ == '__main__':
             labelTest_names = {}
             for file_name in file_names:
                 if (best_5_initial_name2 in file_name) and (args.outcome in file_name):
-                    match = re.search(r'\d+', file_name)
-                    if match:
-                        number = int(match.group())
-                        best_5_names1[int(number)] =file_name
+                    if args.outcome not in ['aki2','opioids_count_day0','opioids_count_day1']:
+                        match = re.search(r'\d+', file_name)  # this match picks the numbers and if the outcome has a numeric in it, there is a problem
+                        if match:
+                            number = int(match.group())
+                            best_5_names1[int(number)] =file_name
+                    else:
+                            number = int(file_name.split("_")[-4])
+                            best_5_names1[int(number)] =file_name
                 elif best_5_initial_name1 in file_name:
                     combined_Result_filename = file_name
                 elif ('Best_HPmodel_'+args.outcome in file_name) and (file_name.split("_")[-2] == 'label'):
                     labelTest_names[int(file_name.split("_")[-3])] = file_name
-
             best_5_names = {}
             for file_name in file_names:
                 if (best_5_initial_name in file_name) and (all(elem in file_name for elem in all_modality_list)):  # using all modality list because we will read the all modality best result
