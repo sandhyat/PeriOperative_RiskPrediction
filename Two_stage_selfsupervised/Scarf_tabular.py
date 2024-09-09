@@ -500,9 +500,10 @@ for runNum in range(len(best_5_random_number)):
         scarf_featureorder = {}
         scarf_featureorder['all_feat'] = features
 
-        output_file_name = dir_name + 'scarf_feat_' + str(args.task) + '.json'
+        output_file_name = dir_name + 'scarf_feat_' + str(args.task) + '_'+str(int(best_5_random_number[runNum]))+ '.json'
         with open(output_file_name, 'w') as outfile: json.dump(scarf_featureorder, outfile)
 
+    # breakpoint()
     train_data = np.concatenate(train_set, axis=1)
     valid_data = np.concatenate(valid_set,axis=1)
     test_data = np.concatenate(test_set, axis=1)
@@ -689,6 +690,7 @@ for runNum in range(len(best_5_random_number)):
     timetaken = end_time-start_time
     print("time taken to finish run number ", runNum, " is ", timetaken)
 
+# breakpoint()
 print("Tranquila")
 
 # saving metadata for all best runs in json; decided to save it also as pickle because the nested datatypes were not letting it be serializable
