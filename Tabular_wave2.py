@@ -246,8 +246,8 @@ if 'problist' in modality_to_use:
     prob_list_emb_sb = prob_list_emb_sb.merge(new_index, on="orlogid_encoded", how="inner").set_index('new_person').reindex(new_index.set_index('new_person').index,fill_value=0).reset_index(drop=True).drop(columns=['orlogid_encoded'], axis=1)
 
 
-# model_list = ['XGBT', 'TabNet', 'Scarf']
-model_list = ['XGBT', 'Scarf']
+model_list = ['XGBT', 'TabNet', 'Scarf']
+# model_list = ['TabNet']
 
 # sav_dir = './Best_results/Preoperative/'
 sav_dir = out_dir + 'Best_results/Preoperative/'
@@ -322,13 +322,6 @@ for m_name in model_list:
         for col in temp_list:
             preops_wave2_t[col] = max(list(categorical_val_map[col].values()))
 
-    if m_name=='Scarf':
-        output_file_name = dir_name + 'scarf_feat_' + str(args.task) + '.json'
-        md_features = open(output_file_name)
-        metadata_features = json.load(md_features)
-
-        scarf_features = metadata_features['all_feat']
-
     metadata_best_run_file = dir_name + '/Best_runs_metadata.pickle'
     with open(metadata_best_run_file, 'rb') as file:
         existing_data = pickle.load(file)
@@ -400,10 +393,21 @@ for m_name in model_list:
                 pred_y_test = model.predict(test_data)
 
         if m_name =='TabNet':
+
+            output_file_name = dir_name + 'tabnet_feat_' + str(args.task) + '_'+str(int(best_5_random_number[runNum]))+ '.json'
+            md_features = open(output_file_name)
+            metadata_features = json.load(md_features)
+
+            tabnet_features = metadata_features['all_feat']
+
             saved_filepath = dir_name + 'BestModel_' + str(int(best_5_random_number[runNum])) + "_" + modal_name +".zip"
 
             tabnet_params = existing_data['run_randomSeed_' + str(int(best_5_random_number[runNum]))]['model_params']
             test_data = pd.concat(test_set, axis=1)
+
+            test_data = test_data.reindex(columns=tabnet_features)
+            if (sum(test_data.isna().any()) > 0):  # this means that the column overlap between two waves is not full (mainly the homemeds as each homemed is a column)
+                test_data.fillna(0, inplace=True)
 
             if binary_outcome:
                 loaded_clf = TabNetClassifier()
@@ -419,10 +423,15 @@ for m_name in model_list:
                 pred_y_test = loaded_clf.predict(test_data.values)
 
         if m_name=='Scarf':
+            output_file_name = dir_name + 'scarf_feat_' + str(args.task) + '_'+str(int(best_5_random_number[runNum]))+ '.json'
+            md_features = open(output_file_name)
+            metadata_features = json.load(md_features)
+
+            scarf_features = metadata_features['all_feat']
+
             if 'pmh' in modality_to_use:
                 scarf_features = scarf_features[:-256] + new_name_pmh + new_name_prbl
             test_data = pd.concat(test_set, axis=1)
-
             test_data = test_data.reindex(columns=scarf_features)
             if (sum(test_data.isna().any()) > 0):  # this means that the column overlap between two waves is not full (mainly the homemeds as each homemed is a column)
                 test_data.fillna(0, inplace=True)
@@ -430,7 +439,7 @@ for m_name in model_list:
 
             param_values = existing_data['run_randomSeed_' + str(int(best_5_random_number[runNum]))]['model_params']
             batch_size_used = param_values['batchSize']
-            device='cpu'
+            device='cuda'
             model = SCARF(
                 input_dim=param_values['input_dim'],
                 features_low=param_values['features_low'],
@@ -447,6 +456,10 @@ for m_name in model_list:
             state_dict = torch.load(saving_path_name, map_location=device)
             model.load_state_dict(state_dict)
 
+            ## this is needed because when the batch_size is 1, the batchnorm1d api breaks
+            if divmod(test_ds.shape[0], batch_size_used)[1] ==1:
+                test_ds = test_ds[:-1,:]
+                y_test = y_test[:-1]
             test_loader = DataLoader(test_ds, batch_size=batch_size_used, shuffle=False)
 
             # get embeddings for training and test set
@@ -474,6 +487,7 @@ for m_name in model_list:
             perf_metric[runNum, 0] = test_auroc
             perf_metric[runNum, 1] = test_auprc
         else:
+            if pred_y_test.ndim == 2: pred_y_test = pred_y_test[:,0]  # to keep the shapes consistent for true and predicted values; mainly for tabnet
             corr_value = np.round(pearsonr(np.array(y_test), np.array(pred_y_test))[0], 3)
             cor_p_value = np.round(pearsonr(np.array(y_test), np.array(pred_y_test))[1], 3)
             print(str(args.task) + " prediction with correlation ", corr_value, ' and corr p value of ', cor_p_value)
@@ -499,7 +513,6 @@ for m_name in model_list:
         print(perf_metric)
 
     print("Final performance metric", perf_metric)
-    breakpoint()
     # saving the performance metrics from all best runs and all models in a pickle file
     perf_filename = sav_dir + str(args.task) + '_Best_perf_metrics_combined_preoperativeWave2.pickle'
     if not os.path.exists(perf_filename):
@@ -522,7 +535,6 @@ for m_name in model_list:
             pickle.dump(existing_data, file)
 
     print(" Model type :", m_name, " Modal name: ", modal_name, "  Finished for wave 2" )
-    breakpoint()
 
 
 
