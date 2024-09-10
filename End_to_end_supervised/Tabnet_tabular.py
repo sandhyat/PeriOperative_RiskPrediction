@@ -235,20 +235,20 @@ to_drop_old_pmh_problist_with_others = ["MentalHistory_anxiety", "MentalHistory_
                                         'URINE NITRITE',
                                         'URINE UROBILINOGEN', 'WHITE BLOOD CELLS, URINE']
 
-preops = preops.drop(columns=to_drop_old_pmh_problist_with_others)
+preops0 = preops.drop(columns=to_drop_old_pmh_problist_with_others)
 
 # this is being done to remain consistent with other methods
 test_size = 0.2
 valid_size = 0.0005  # change back to 0.00005 for the full dataset, since the validation set is used in the off the shelf tabnet api, we need valid set big enough with both labels
 y_outcome = outcome_df["outcome"].values
-preops.reset_index(drop=True, inplace=True)
-upto_test_idx = int(test_size * len(preops))
-test = preops.iloc[:upto_test_idx]
-train0 = preops.iloc[upto_test_idx:]
+preops0.reset_index(drop=True, inplace=True)
+upto_test_idx = int(test_size * len(preops0))
+test = preops0.iloc[:upto_test_idx]
+train0 = preops0.iloc[upto_test_idx:]
 test_index = test.index
 
 if args.task == 'icu':  # this part is basically dropping the planned icu cases from the evaluation set
-    test_index = preops.iloc[test_index][preops.iloc[test_index]['plannedDispo'] != 'ICU']['plannedDispo'].index
+    test_index = preops0.iloc[test_index][preops0.iloc[test_index]['plannedDispo'] != 'ICU']['plannedDispo'].index
 
 if 'homemeds' in modality_to_use:
     home_meds = pd.read_csv(data_dir + 'home_med_cui.csv', low_memory=False)
@@ -344,6 +344,7 @@ for runNum in range(len(best_5_random_number)):
     features = []
     grouped_features = []
     if 'preops' in modality_to_use:
+        preops = preops0.copy(deep=True)
         if (binary_outcome == True) and (y_outcome.dtype != 'float64'):
             train, valid = train_test_split(train0, test_size=valid_size / (1. - test_size), random_state=int(best_5_random_number[runNum]),
                                             stratify=y_outcome[train0.index])
@@ -400,7 +401,6 @@ for runNum in range(len(best_5_random_number)):
         input_shape_preops = len(preops_tr.columns)
 
         features = list(preops_tr.columns)
-
         if eval(args.bestModel) ==True:
             # this was done post facto
             tabnet_featureorder = {}
@@ -411,6 +411,7 @@ for runNum in range(len(best_5_random_number)):
             tabnet_featureorder['n_col_unique']=nunique.to_dict()
 
             output_file_name = dir_name + 'tabnet_feat_' + str(args.task) + '.pickle'
+            # output_file_name = dir_name + 'tabnet_feat_' + str(args.task) + '_' + str(int(best_5_random_number[runNum])) + '.pickle'
             with open(output_file_name, 'wb') as outfile: pickle.dump(tabnet_featureorder, outfile)
 
         cat_idxs = [colname for colname, f in enumerate(features) if f in categorical_columns]
@@ -541,6 +542,15 @@ for runNum in range(len(best_5_random_number)):
         grouped_features.append(list(np.arange(len(features), len(features)+problist_input_dim)))
 
         features = features + list(prob_list_emb_sb_final.columns)
+
+    if eval(args.bestModel) ==True:
+        # this was done post facto
+        tabnet_Fullfeatureorder = {}
+        tabnet_Fullfeatureorder['all_feat'] = features
+
+        output_file_name = dir_name + 'tabnet_feat_' + str(args.task) + '_'+str(int(best_5_random_number[runNum]))+ '.json'
+        with open(output_file_name, 'w') as outfile: json.dump(tabnet_Fullfeatureorder, outfile)
+
 
     train_data = np.concatenate(train_set, axis=1)
     valid_data = np.concatenate(valid_set,axis=1)
