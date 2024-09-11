@@ -283,7 +283,7 @@ if 'meds' in modality_to_use:
     all_med_data.drop(["endtime"], axis=1, inplace=True)
 
 # model_list = ['XGBTtsSum', 'lstm', 'MVCL']
-model_list = ['lstm']
+model_list = ['XGBTtsSum']
 
 sav_dir = out_dir + 'Best_results/Intraoperative/'
 file_names = os.listdir(sav_dir)
@@ -299,7 +299,8 @@ processed_preops_wave2 = preprocess_inference(preops_wave2.copy(), metadata)
 for m_name in model_list:
     modal_name = 'DataModal'
     for i in range(len(modality_to_use)):
-        modal_name = modal_name + "_" + modality_to_use[i]
+        if (modality_to_use[i] != 'cbow'):
+            modal_name = modal_name + "_" + modality_to_use[i]
     dir_name = sav_dir + m_name + '/' + modal_name + "_" + str(args.task) +"/"
 
     if (m_name=='lstm') or (m_name=='MVCL'):
@@ -393,7 +394,7 @@ for m_name in model_list:
             add_med = 0 in value_med_ids.unique()
             dense_med_ids = torch.sparse_coo_tensor(torch.transpose(index_med_ids, 0, 1), value_med_ids + add_med,
                                                     dtype=torch.int32)
-    breakpoint()
+
     if m_name=='MVCL':
         print("TO be filled")
 
@@ -554,8 +555,14 @@ for m_name in model_list:
             file1 = open(feature_filename, "r+")
             feature_order = file1.read()
             extracted_list = ast.literal_eval(feature_order)
+
             if 'pmh' in modality_to_use:
-                extracted_list = extracted_list[:-256] + new_name_pmh + new_name_prbl
+                el_1 = [str(name) for name in extracted_list]  # this extra step is needed because when home meds are ohe they are integers (columns) which are not iterable when looking for a phrase in them
+                flow_list = [flowname for flowname in el_1 if 'Flow' in flowname]
+                med_list = [medname for medname in el_1 if 'MedUnit' in medname]
+                pmh_index_start = 256 + len(flow_list) + len(med_list)
+                extracted_list = extracted_list[
+                                 :-pmh_index_start] + new_name_pmh + new_name_prbl + flow_list + med_list
 
             test_data = pd.concat(test_set, axis=1)
             test_data = test_data.reindex(columns=extracted_list)
@@ -645,8 +652,9 @@ for m_name in model_list:
             perf_metric[runNum, 0] = test_auroc
             perf_metric[runNum, 1] = test_auprc
         else:
-            corr_value = np.round(pearsonr(np.array(y_test.reshape(-1, 1)), np.array(pred_y_test))[0], 3)
-            cor_p_value = np.round(pearsonr(np.array(y_test.reshape(-1, 1)), np.array(pred_y_test))[1], 3)
+            if pred_y_test.ndim == 2: pred_y_test = pred_y_test[:,0]  # to keep the shapes consistent for true and predicted values; mainly for tabnet
+            corr_value = np.round(pearsonr(np.array(y_test), np.array(pred_y_test))[0], 3)
+            cor_p_value = np.round(pearsonr(np.array(y_test), np.array(pred_y_test))[1], 3)
             print(str(args.task) + " prediction with correlation ", corr_value, ' and corr p value of ', cor_p_value)
             r2value = r2_score(np.array(y_test), np.array(pred_y_test))  # inbuilt function also exists for R2
             print(" Value of R2 ", r2value)
@@ -661,8 +669,8 @@ for m_name in model_list:
             print("MAE on the test set ", mae_full)
             print("MSE on the test set ", mse_full)
 
-            perf_metric[runNum, 0] = corr_value[0]
-            perf_metric[runNum, 1] = cor_p_value[0]
+            perf_metric[runNum, 0] = corr_value
+            perf_metric[runNum, 1] = cor_p_value
             perf_metric[runNum, 2] = r2value
             perf_metric[runNum, 3] = mae_full
             perf_metric[runNum, 4] = mse_full
@@ -670,5 +678,26 @@ for m_name in model_list:
         print(perf_metric)
 
     print("Final performance metric", perf_metric)
-    breakpoint()
+    # breakpoint()
+    # saving the performance metrics from all best runs and all models in a pickle file
+    perf_filename = sav_dir + str(args.task) + '_Best_perf_metrics_combined_intraoperativeWave2.pickle'
+    if not os.path.exists(perf_filename):
+        data = {}
+        data[str(m_name)] = {modal_name: perf_metric}
+        with open(perf_filename, 'wb') as file:
+            pickle.dump(data, file)
+    else:
+        with open(perf_filename, 'rb') as file:
+            existing_data = pickle.load(file)
+
+        try:
+            existing_data[str(m_name)][modal_name] = perf_metric
+        except(KeyError):  # this is to take care of the situation when a new model is added to the file
+            existing_data[str(m_name)] = {}
+            existing_data[str(m_name)][modal_name] = perf_metric
+
+        # Save the updated dictionary back to the pickle file
+        with open(perf_filename, 'wb') as file:
+            pickle.dump(existing_data, file)
+
     print(" Model type :", m_name, " Modal name: ", modal_name, "  Finished for wave 2" )
