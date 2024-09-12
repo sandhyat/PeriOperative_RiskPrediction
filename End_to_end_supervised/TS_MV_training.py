@@ -183,7 +183,7 @@ if eval('args.preops') == True:
 
 if eval('args.pmhProblist') == True:
     modality_to_use.append('pmh')
-    modality_to_use.append('problist')
+    # modality_to_use.append('problist')  ## this doesn't exist in MV
 
 if eval('args.homemeds') == True:
     modality_to_use.append('homemeds')
@@ -344,8 +344,8 @@ preops = preops.merge(new_index, on="orlogid_encoded", how="inner").drop(["orlog
 
 if 'preops' in modality_to_use:
     # this is being used because we will be adding the problem list and pmh as a seperate module in this file too
-    # to drop the old pmh and problem list
-    to_drop_old_pmh_problist_with_others = ["MentalHistory_anxiety", "MentalHistory_bipolar",
+    # to drop the old pmh
+    to_drop_old_pmh_with_others = ["MentalHistory_anxiety", "MentalHistory_bipolar",
                                             "MentalHistory_depression",
                                             "MentalHistory_schizophrenia", "PNA", "delirium_history",
                                             "MentalHistory_adhd",
@@ -362,7 +362,8 @@ if 'preops' in modality_to_use:
                                             'URINE NITRITE',
                                             'URINE UROBILINOGEN', 'WHITE BLOOD CELLS, URINE']
 
-    preops = preops.drop(columns=to_drop_old_pmh_problist_with_others)
+    to_drop_old_pmh_with_others = list(set(preops).intersection(to_drop_old_pmh_with_others))
+    preops = preops.drop(columns=to_drop_old_pmh_with_others) # "['pre_aki_status', 'preop_ICU', 'AnestStop']
     bow_input = pd.read_csv(data_dir + 'cbow_proc_text_mv.csv')
 
     bow_input = bow_input.merge(new_index, on="orlogid_encoded", how="inner").set_index('new_person').reindex(
@@ -889,7 +890,6 @@ for runNum in range(len(best_5_random_number)):
             if 'Att_HM_Agg' in param_values.keys():
                 config['Att_HM_Agg'] = param_values['Att_HM_Agg']
                 config['Att_HM_agg_Heads'] = param_values['Att_HM_agg_Heads']
-
     if 'pmh' in modality_to_use:
 
         if args.pmhform == 'embedding_sum':
@@ -914,28 +914,28 @@ for runNum in range(len(best_5_random_number)):
                 config['Att_pmh_Agg'] = param_values['Att_pmh_Agg']
                 config['AttPmhAgg_Heads'] = param_values['AttPmhAgg_Heads']
 
-    if 'problist' in modality_to_use:
-
-        if args.problistform == 'embedding_sum':
-            problist_tr = torch.tensor(prob_list_emb_sb_final.iloc[train_index].to_numpy(), dtype=torch.float32)
-            problist_te = torch.tensor(prob_list_emb_sb_final.iloc[test_index].to_numpy(), dtype=torch.float32)
-            problist_val = torch.tensor(prob_list_emb_sb_final.iloc[valid_index].to_numpy(), dtype=torch.float32)
-
-
-        if args.problistform == 'embedding_attention':
-            problist_tr = torch.index_select(dense_problist_embedding, 0, torch.tensor(train_index)).coalesce()
-            problist_val = torch.index_select(dense_problist_embedding, 0, torch.tensor(valid_index)).coalesce()
-            problist_te = torch.index_select(dense_problist_embedding, 0, torch.tensor(test_index)).coalesce()
-
-
-        if eval(args.bestModel) == True:
-            config['hidden_units_problist'] = param_values['hidden_units_problist']
-            config['hidden_units_final_problist'] = param_values['hidden_units_final_problist']
-            config['hidden_depth_problist'] = param_values['hidden_depth_problist']
-            config['weight_decay_problistL2'] = param_values['weight_decay_problistL2']
-            config['weight_decay_problistL1'] = param_values['weight_decay_problistL1']
-            if 'Att_problist_Agg' in param_values.keys():
-                config['Att_problist_Agg'] = param_values['Att_problist_Agg']
+    # if 'problist' in modality_to_use:
+    #
+    #     if args.problistform == 'embedding_sum':
+    #         problist_tr = torch.tensor(prob_list_emb_sb_final.iloc[train_index].to_numpy(), dtype=torch.float32)
+    #         problist_te = torch.tensor(prob_list_emb_sb_final.iloc[test_index].to_numpy(), dtype=torch.float32)
+    #         problist_val = torch.tensor(prob_list_emb_sb_final.iloc[valid_index].to_numpy(), dtype=torch.float32)
+    #
+    #
+    #     if args.problistform == 'embedding_attention':
+    #         problist_tr = torch.index_select(dense_problist_embedding, 0, torch.tensor(train_index)).coalesce()
+    #         problist_val = torch.index_select(dense_problist_embedding, 0, torch.tensor(valid_index)).coalesce()
+    #         problist_te = torch.index_select(dense_problist_embedding, 0, torch.tensor(test_index)).coalesce()
+    #
+    #
+    #     if eval(args.bestModel) == True:
+    #         config['hidden_units_problist'] = param_values['hidden_units_problist']
+    #         config['hidden_units_final_problist'] = param_values['hidden_units_final_problist']
+    #         config['hidden_depth_problist'] = param_values['hidden_depth_problist']
+    #         config['weight_decay_problistL2'] = param_values['weight_decay_problistL2']
+    #         config['weight_decay_problistL1'] = param_values['weight_decay_problistL1']
+    #         if 'Att_problist_Agg' in param_values.keys():
+    #             config['Att_problist_Agg'] = param_values['Att_problist_Agg']
 
     if 'flow' in modality_to_use:
         if (args.includeMissingnessMasks):
@@ -1038,9 +1038,17 @@ for runNum in range(len(best_5_random_number)):
             data_te['cbow'] = torch.tensor(bow_input.iloc[test_index].to_numpy(), dtype=torch.float32)
 
         if 'homemeds' in modality_to_use:
-            data_tr['homemeds'] = hm_tr
-            data_val['homemeds'] = hm_val
-            data_te['homemeds'] = hm_te
+            ## todo shuffle the homemeds here
+            if True:
+                data_tr['homemeds'] = hm_tr
+                data_val['homemeds'] = hm_val
+                data_te['homemeds'] = hm_te
+            else:
+                idx = torch.randperm(hm_tr.nelement())  #shuffling the indices here
+                hm_tr = hm_tr.reshape(-1)[idx].view(hm_tr.size())
+                data_tr['homemeds'] = hm_tr
+                data_val['homemeds'] = hm_val
+                data_te['homemeds'] = hm_te
 
         if 'pmh' in modality_to_use:
             data_tr['pmh'] = pmh_tr
@@ -1070,7 +1078,6 @@ for runNum in range(len(best_5_random_number)):
             data_te['meds'] = [torch.index_select(dense_med_ids, 0, torch.tensor(test_index)).coalesce(),
                                torch.index_select(dense_med_dose, 0, torch.tensor(test_index)).coalesce(),
                                torch.index_select(dense_med_units, 0, torch.tensor(test_index)).coalesce()]
-    # breakpoint()
     if args.modelType == 'transformer':
         if eval(args.bestModel) == True:
             config['e_dim_flow'] = param_values['e_dim_flow']
@@ -1278,7 +1285,6 @@ for runNum in range(len(best_5_random_number)):
           # pred_y_test.append(y_pred.squeeze(-1).cpu().detach().numpy())
           break
 
-    # breakpoint()
     model.eval()
 
     true_y_test = np.concatenate(true_y_test)
