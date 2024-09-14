@@ -308,6 +308,8 @@ elif (args.task == 'aki1' or args.task == 'aki2' or args.task == 'aki3'):
     outcome_df = aki_outcome
 elif (args.task == 'endofcase'):
     outcome_df = end_of_case_times[['orlogid_encoded', 'true_test']]
+elif (args.task =='syn_Thres'):
+    outcome_df = outcomes[['orlogid_encoded', 'DVT_PE']]  # this is just a placeholder here which will have med value based outcome later
 else:
     raise Exception("outcome not handled")
 
@@ -317,7 +319,7 @@ combined_case_set = list(set(outcome_df["orlogid_encoded"].values).intersection(
     set(preops['orlogid_encoded'].values)))
 
 if False:
-    combined_case_set = np.random.choice(combined_case_set, 2500, replace=False)
+    combined_case_set = np.random.choice(combined_case_set, 5000, replace=False)
 
 outcome_df = outcome_df.loc[outcome_df['orlogid_encoded'].isin(combined_case_set)]
 preops = preops.loc[preops['orlogid_encoded'].isin(combined_case_set)]
@@ -678,6 +680,38 @@ if 'meds' in modality_to_use:
                                                   value_med_name + add_name, dtype=torch.int32).to_dense()
 
 
+    if (args.task =='syn_Thres'):
+        print("Creating new simple outcomes")
+        drug_dose['dose'] = drug_dose.dose.astype('float')
+        if False: # thresholding at mean
+            dose_mean = drug_dose.groupby(['med_unit_comb'])['dose'].mean().reset_index()
+            dose_mean = dose_mean.rename(columns={'dose': "mean_thresh"})
+
+            most_common_med_comb = drug_dose.groupby(['person_integer','med_unit_comb'])['dose'].mean().reset_index().med_unit_comb.value_counts().index[0]
+            most_comb_mean_per_person = \
+            drug_dose[drug_dose['med_unit_comb'] == most_common_med_comb].groupby('person_integer')[
+                'dose'].mean().reset_index()
+        else: # thresholding at 80 quantile
+            dose_mean = drug_dose.groupby(['med_unit_comb'])['dose'].quantile(0.8).reset_index()
+            dose_mean = dose_mean.rename(columns={'dose': "mean_thresh"})
+
+            most_common_med_comb = drug_dose.groupby(['person_integer', 'med_unit_comb'])[
+                'dose'].quantile(0.8).reset_index().med_unit_comb.value_counts().index[0]
+            most_comb_mean_per_person = \
+                drug_dose[drug_dose['med_unit_comb'] == most_common_med_comb].groupby('person_integer')[
+                    'dose'].quantile(0.8).reset_index()
+
+        most_common_med_comb_mean_thres = dose_mean[dose_mean['med_unit_comb']==most_common_med_comb]['mean_thresh'][most_common_med_comb]
+
+        # this is basically filling in 0 for the dose when the most freq medication was not used. In those cases after thresholding the outcome is going to be zero
+        new_outcome_df =  most_comb_mean_per_person.merge(new_index.rename({"new_person": "person_integer"}, axis=1),on='person_integer', how='right').merge(outcome_df, on="orlogid_encoded",how="left").fillna(0)
+        new_outcome_df.loc[new_outcome_df['dose'] >= most_common_med_comb_mean_thres, 'outcome'] = 1
+        new_outcome_df.loc[new_outcome_df['dose'] < most_common_med_comb_mean_thres, 'outcome'] = 0
+        outcome_df = new_outcome_df[["orlogid_encoded", "outcome"]]
+        outcome_df['outcome'] =  outcome_df['outcome'].astype('int')
+
+
+
     config['v_units'] = vocab_len_units
     config['v_med_ids'] = vocab_len_med_ids
     config['e_dim_med_ids'] = args.lstmMedEmbDim
@@ -763,6 +797,15 @@ else:
     perf_metric = np.zeros((len(best_5_random_number), 5)) # 5 is for the metrics corr, corr_p, R2, MAE, MSE
     os_flag =False
 
+# not a priority right now; this would basically allow running multiple seeds at different time points by checking if already exists
+# if eval(args.bestModel) ==True:
+#     temp_filename = dir_name + '/Best_runs_metadata.pickle'
+#     if os.path.exists(temp_filename):
+#         with open(temp_filename, 'rb') as file: md_e = pickle.load(file)
+#         seed_keys = md_e.keys()
+#         done_seeds = [name.split("_")[-1] for name in seed_keys]
+#         breakpoint()
+
 for runNum in range(len(best_5_random_number)):
     # starting time of the run
     start_time = datetime.now()
@@ -788,7 +831,7 @@ for runNum in range(len(best_5_random_number)):
 
     if 'preops' not in modality_to_use:
         test_size = 0.2
-        valid_size = 0.00005  # change back to 0.00005 for the full dataset
+        valid_size = 0.05  # TODO: change back to 0.00005 for the full dataset
         y_outcome = outcome_df["outcome"].values
         preops.reset_index(drop=True, inplace=True)
         upto_test_idx = int(test_size * len(preops))
@@ -801,7 +844,6 @@ for runNum in range(len(best_5_random_number)):
         else:
             train, valid = train_test_split(train0, test_size=valid_size / (1. - test_size),
                                             random_state=int(best_5_random_number[runNum]))
-
         train_index = train.index
         valid_index = valid.index
         test_index = test.index
@@ -819,8 +861,8 @@ for runNum in range(len(best_5_random_number)):
             outcome_df[
                 "outcome"].values,
             binary_outcome=binary_outcome,
-            valid_size=0.00005, random_state=int(best_5_random_number[runNum]), input_dr=data_dir,
-            output_dr=out_dir)  # change back to 0.00005
+            valid_size=0.05, random_state=int(best_5_random_number[runNum]), input_dr=data_dir,
+            output_dr=out_dir)  # TODO: change back to 0.00005 for the full dataset
 
         if args.task == 'icu':  # this part is basically dropping the planned icu cases from the evaluation set (value of plannedDispo are numeric after processing; the df has also been changed )
             test_index = preops.iloc[test_index][preops.iloc[test_index]['plannedDispo'] != 3]['plannedDispo'].index
@@ -1325,6 +1367,7 @@ for runNum in range(len(best_5_random_number)):
         best_metadata_dict[dict_key] = best_dict_local
 
     if binary_outcome:
+        print(perf_metric)
         fpr_roc, tpr_roc, thresholds_roc = roc_curve(true_y_test, pred_y_test, drop_intermediate=False)
         precision_prc, recall_prc, thresholds_prc = precision_recall_curve(true_y_test, pred_y_test)
         # interpolation in ROC
@@ -1336,7 +1379,7 @@ for runNum in range(len(best_5_random_number)):
     timetaken = end_time-start_time
     print("time taken to finish run number ", runNum, " is ", timetaken)
 
-
+breakpoint()
 print("Tranquila")
 # saving metadata for all best runs in json; decided to save it also as pickle because the nested datatypes were not letting it be serializable
 metadata_filename = dir_name + '/Best_runs_metadata.pickle'
