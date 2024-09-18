@@ -1111,7 +1111,7 @@ class TS_Transformer_Med_index(nn.Module):
 
                 final_for_mlp = attTS_path[:, 0, :]
             else:
-                final_fo_mlp = flowsheets_embedded.sum(dim=1)
+                final_for_mlp = flowsheets_embedded.sum(dim=1)
             all_rep.append(final_for_mlp)
 
         elif 'meds' in self.modality_to_use:
