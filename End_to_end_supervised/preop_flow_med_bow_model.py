@@ -1100,15 +1100,18 @@ class TS_Transformer_Med_index(nn.Module):
             all_rep.append(final_for_mlp)
 
         elif 'flow' in self.modality_to_use:
-            bs = flowsheets_embedded.size(0)
-            final_for_TEncoder = torch.cat((self.class_token_TS.expand(bs, -1, -1), flowsheets_embedded),1)  # the init token does the part of cls
+            if False:
+                bs = flowsheets_embedded.size(0)
+                final_for_TEncoder = torch.cat((self.class_token_TS.expand(bs, -1, -1), flowsheets_embedded),1)  # the init token does the part of cls
 
-            # positional encoding part
-            final_for_TEncoder = final_for_TEncoder + self.P[:, :final_for_TEncoder.shape[1], :].to(final_for_TEncoder.device)
+                # positional encoding part
+                final_for_TEncoder = final_for_TEncoder + self.P[:, :final_for_TEncoder.shape[1], :].to(final_for_TEncoder.device)
 
-            attTS_path = self.transformerencoder(final_for_TEncoder)
+                attTS_path = self.transformerencoder(final_for_TEncoder)
 
-            final_for_mlp = attTS_path[:, 0, :]
+                final_for_mlp = attTS_path[:, 0, :]
+            else:
+                final_fo_mlp = flowsheets_embedded.sum(dim=1)
             all_rep.append(final_for_mlp)
 
         elif 'meds' in self.modality_to_use:
