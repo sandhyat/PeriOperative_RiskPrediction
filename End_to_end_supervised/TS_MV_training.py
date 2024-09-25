@@ -320,7 +320,7 @@ combined_case_set = list(set(outcome_df["orlogid_encoded"].values).intersection(
     set(end_of_case_times['orlogid_encoded'].values)).intersection(
     set(preops['orlogid_encoded'].values)))
 
-if False:
+if True:
     combined_case_set = np.random.choice(combined_case_set, 2500, replace=False)
 
 outcome_df = outcome_df.loc[outcome_df['orlogid_encoded'].isin(combined_case_set)]
@@ -538,13 +538,13 @@ if 'pmh' in modality_to_use:
 
 if 'flow' in modality_to_use:
     # flowsheet data
-    very_dense_flow = feather.read_feather(data_dir +"flow_ts/Imputed_very_dense_flow.feather")
+    very_dense_flow = feather.read_feather(data_dir +"flow_ts/Imputed_very_dense_flow_wave0.feather")
     very_dense_flow.drop(very_dense_flow[very_dense_flow['timepoint'] > 511].index, inplace=True)
     very_dense_flow = very_dense_flow.merge(end_of_case_times[['orlogid_encoded', 'endtime']], on="orlogid_encoded")
     very_dense_flow = very_dense_flow.loc[very_dense_flow['endtime'] > very_dense_flow['timepoint']]
     very_dense_flow.drop(["endtime"], axis=1, inplace=True)
 
-    other_intra_flow_wlabs = feather.read_feather(data_dir +"flow_ts/Imputed_other_flow.feather")
+    other_intra_flow_wlabs = feather.read_feather(data_dir +"flow_ts/Imputed_other_flow_wave0.feather")
     other_intra_flow_wlabs.drop(other_intra_flow_wlabs[other_intra_flow_wlabs['timepoint'] > 511].index, inplace=True)
     other_intra_flow_wlabs = other_intra_flow_wlabs.merge(end_of_case_times[['orlogid_encoded', 'endtime']],
                                                           on="orlogid_encoded")
@@ -616,20 +616,17 @@ if 'meds' in modality_to_use:
 
     drug_med_ids = all_med_data[['orlogid_encoded', 'time', 'drug_position', 'med_integer']]
 
-    if False:
-        if args.drugNamesNo == True:
-            drug_med_id_map = feather.read_feather(data_dir + 'med_ts/med_id_map.feather')
-            drug_words = None
-            word_id_map = None
-        else:
-            drug_words = feather.read_feather(data_dir + 'med_ts/drug_words.feather')
-            drug_words.drop(drug_words[drug_words['timepoint'] > 511].index, inplace=True)
-            word_id_map = feather.read_feather(data_dir + 'med_ts/word_id_map.feather')
-            drug_med_id_map = None
-
-    if True:
+    if args.drugNamesNo == True:
+        # drug_med_id_map = feather.read_feather(data_dir + 'med_ts/med_id_map.feather')
+        drug_med_id_map = pd.read_csv(data_dir + 'med_ts/med_id_map.csv')
         drug_words = None
         word_id_map = None
+    else:
+        drug_words = feather.read_feather(data_dir + 'med_ts/drug_words.feather')
+        drug_words.drop(drug_words[drug_words['timepoint'] > 511].index, inplace=True)
+        word_id_map = feather.read_feather(data_dir + 'med_ts/word_id_map.feather')
+        drug_med_id_map = None
+
 
     # drug_dose = all_med_data[['orlogid_encoded', 'time', 'drug_position', 'unit_integer',
     #                           'dose']]
@@ -643,8 +640,8 @@ if 'meds' in modality_to_use:
     if args.drugNamesNo == False:
         vocab_len_words = len(word_id_map)
     else:
-        # vocab_len_med_ids = len(drug_med_id_map)  ## TODO: fix this once you know where the map file is
-        vocab_len_med_ids = 102
+        vocab_len_med_ids = len(drug_med_id_map)  ## TODO: fix this once you know where the map file is; done
+        # vocab_len_med_ids = 102
 
 
     drug_dose = drug_dose.merge(new_index, on="orlogid_encoded", how="inner").drop(["orlogid_encoded"], axis=1).rename({"new_person": "person_integer"}, axis=1)
@@ -1134,7 +1131,6 @@ for runNum in range(len(best_5_random_number)):
     best_metric = 1000 # some large number
     lr_schedular_epoch_dict = {}
     lr_schedular_epoch_dict[0] = updating_lr
-
     for epoch in range(args.epochs):
       loss_tr = 0
       loss_tr_cls = 0
@@ -1186,9 +1182,7 @@ for runNum in range(len(best_5_random_number)):
                   local_data['flow'].append(very_dense_tr_mask[these_index, :, :])
                   sparse_mask = torch.sparse_coo_tensor(local_data['flow'][1]._indices(), np.ones(len(local_data['flow'][1]._values())), local_data['flow'][1].size())
                   local_data['flow'].append(sparse_mask)
-
           data_train, mod_order_dict = preop_flow_med_bow_model.collate_time_series(local_data, device)
-
           # reset the gradients back to zero as PyTorch accumulates gradients on subsequent backward passes
           optimizer.zero_grad()
 

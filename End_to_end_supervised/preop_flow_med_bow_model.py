@@ -2189,11 +2189,9 @@ def collate_time_series(batch0, device):
                 elif i.rsplit('_')[0] =='flow':
                     k = k + 1
                     list_order[i] = k
-                    if i.rsplit('_')[1] == '0':
-                        output['flow'] = torch.nn.utils.rnn.pad_sequence([torch.hstack([p[mod_ord_ind_dict['flow_0']].to_dense()[0:p[mod_ord_ind_dict['endtimes']].int().item(), :],
-                                                           torch.cumsum(p[mod_ord_ind_dict['flow_1']].to_dense()[0:p[mod_ord_ind_dict['endtimes']].int().item(), :],
-                                                                        dim=0)]) for p in sorted_batch],
-                                            batch_first=True).to(device)
+                    if i.rsplit('_')[1] == '0':  # if this line dives error it will most likely be when you are testing on a subset of dataset and the maximum timepoint is smaller than 511 in that subset for dense flowsheets
+                        output['flow'] = torch.nn.utils.rnn.pad_sequence([torch.hstack([p[mod_ord_ind_dict['flow_0']].to_dense()[0:p[mod_ord_ind_dict['endtimes']].int().item(), :],torch.cumsum(p[mod_ord_ind_dict['flow_1']].to_dense()[0:p[mod_ord_ind_dict['endtimes']].int().item(), :],dim=0)]) for p in sorted_batch], batch_first=True).to(device)
+
 
     ## test and handle if the max achieved time is less than the inference target time
     for i in ['meds', 'flow']:
