@@ -320,7 +320,7 @@ combined_case_set = list(set(outcome_df["orlogid_encoded"].values).intersection(
     set(end_of_case_times['orlogid_encoded'].values)).intersection(
     set(preops['orlogid_encoded'].values)))
 
-if True:
+if False:
     combined_case_set = np.random.choice(combined_case_set, 2500, replace=False)
 
 outcome_df = outcome_df.loc[outcome_df['orlogid_encoded'].isin(combined_case_set)]
