@@ -196,17 +196,27 @@ if eval('args.meds') == True:
 
 # data_dir = '/mnt/ris/ActFastExports/v1.3.3/mv_data/'
 data_dir = '/input/' +'mv_data/'
+data_dir1 = '/input1/'
+
 
 # out_dir = './'
 out_dir = '/output/'
 
-preops = pd.read_csv(data_dir + 'mv_preop.csv')
-preops = preops.drop_duplicates(subset=['orlogid_encoded'])
-outcomes = pd.read_csv(data_dir + 'outcomes_mv.csv')
-outcomes = outcomes.dropna(subset=['orlogid_encoded'])
-end_of_case_times = feather.read_feather(data_dir + 'end_of_case_times_wave0.feather')
+preops0 = pd.read_csv(data_dir + 'mv_preop.csv')
+preops0 = preops0.drop_duplicates(subset=['orlogid_encoded'])
+outcomes0 = pd.read_csv(data_dir + 'outcomes_mv.csv')
+outcomes0 = outcomes0.dropna(subset=['orlogid_encoded'])
+end_of_case_times0 = feather.read_feather(data_dir + 'end_of_case_times_wave0.feather')
 
-end_of_case_times = end_of_case_times[['orlogid_encoded', 'endtime']]
+end_of_case_times0 = end_of_case_times0[['orlogid_encoded', 'endtime']]
+
+preops1 = pd.read_csv(data_dir1 + 'epic_preop.csv')
+outcomes1 = pd.read_csv(data_dir1 + 'epic_outcomes.csv')
+end_of_case_times1 = outcomes1[['orlogid_encoded', 'endtime']]
+
+outcomes = pd.concat([outcomes0, outcomes1], axis=0)
+end_of_case_times = pd.concat([end_of_case_times0, end_of_case_times1], axis=0)
+preops = pd.concat([preops0, preops1], axis=0)
 
 
 # end_of_case_times = feather.read_feather(data_dir + 'end_of_case_times.feather')
@@ -227,6 +237,7 @@ outcomes = outcomes.sort_values(by='survival_time').drop_duplicates(subset=['orl
 
 # exclude very short cases (this also excludes some invalid negative times)
 end_of_case_times = end_of_case_times.loc[end_of_case_times['endtime'] > 30]
+#end_of_case_times1 = end_of_case_times1.loc[end_of_case_times1['endtime'] > 30]
 
 if args.task == 'endofcase':
     # updating the end_of_case_times targets for bigger distribution;
@@ -293,6 +304,13 @@ elif (args.task == 'mortality'):
     mortality_outcome.loc[mortality_outcome['death_in_30'] == False, 'death_in_30'] = 0
     mortality_outcome['death_in_30'] = mortality_outcome['death_in_30'].astype(int)
     outcome_df = mortality_outcome
+
+    #mortality_outcome1 = outcomes1[['orlogid_encoded', 'death_in_30']]
+    #mortality_outcome1.loc[mortality_outcome1['death_in_30'] == True, 'death_in_30'] = 1
+    #mortality_outcome1.loc[mortality_outcome1['death_in_30'] == False, 'death_in_30'] = 0
+    #mortality_outcome1['death_in_30'] = mortality_outcome1['death_in_30'].astype(int)
+    #outcome_df1 = mortality_outcome1
+
 elif (args.task == 'aki1' or args.task == 'aki2' or args.task == 'aki3'):
     aki_outcome = outcomes[['orlogid_encoded', 'post_aki_status']]
     aki_outcome = aki_outcome.dropna(subset=[
@@ -315,31 +333,43 @@ elif (args.task == 'endofcase'):
 else:
     raise Exception("outcome not handled")
 
+
 ## intersect 3 mandatory data sources: preop, outcome, case end times
-combined_case_set = list(set(outcome_df["orlogid_encoded"].values).intersection(
-    set(end_of_case_times['orlogid_encoded'].values)).intersection(
-    set(preops['orlogid_encoded'].values)))
+combined_case_set = list(set(outcome_df["orlogid_encoded"].values).intersection(set(end_of_case_times['orlogid_encoded'].values)).intersection(set(preops['orlogid_encoded'].values)))
+
+#combined_case_set1 = list(set(outcome_df1["orlogid_encoded"].values).intersection(set(end_of_case_times1['orlogid_encoded'].values)).intersection(set(preops1['orlogid_encoded'].values)))
+#combined_case_set = combined_case_set + combined_case_set1
+#outcome_df = pd.concat([outcome_df, outcome_df1], axis=0)
+#end_of_case_times = pd.concat([end_of_case_times, end_of_case_times1], axis=0)
 
 if False:
     combined_case_set = np.random.choice(combined_case_set, 2500, replace=False)
+    #combined_case_set1 = np.random.choice(combined_case_set1, 2500, replace=False)
+    #combined_case_set = list(combined_case_set) + list(combined_case_set1)
+    #combined_case_set = np.concatenate([combined_case_set, combined_case_set1])
+
 
 outcome_df = outcome_df.loc[outcome_df['orlogid_encoded'].isin(combined_case_set)]
 preops = preops.loc[preops['orlogid_encoded'].isin(combined_case_set)]
+#preops1 = preops1.loc[preops1['orlogid_encoded'].isin(combined_case_set)]
 end_of_case_times = end_of_case_times.loc[end_of_case_times['orlogid_encoded'].isin(combined_case_set)]
 
 outcome_df = outcome_df.set_axis(["orlogid_encoded", "outcome"], axis=1)
 
+
 # checking for NA and other filters
 outcome_df = outcome_df.loc[outcome_df['orlogid_encoded'].isin(preops["orlogid_encoded"].unique())]
+outcome_df['orlogid_encoded'] = outcome_df['orlogid_encoded'].astype('str')
 outcome_df = outcome_df.dropna(axis=0).sort_values(["orlogid_encoded"]).reset_index(drop=True)
 new_index = outcome_df["orlogid_encoded"].copy().reset_index().rename({"index": "new_person"}, axis=1)   # this df basically reindexes everything so from now onwards orlogid_encoded is an integer
 
-endtimes = end_of_case_times.merge(new_index, on="orlogid_encoded", how="inner").drop(["orlogid_encoded"],
-                                                                                     axis=1).rename(
-    {"new_person": "person_integer"}, axis=1).sort_values(["person_integer"]).reset_index(drop=True)
+end_of_case_times['orlogid_encoded'] = end_of_case_times['orlogid_encoded'].astype('str')
+preops['orlogid_encoded'] = preops['orlogid_encoded'].astype('str')
+endtimes = end_of_case_times.merge(new_index, on="orlogid_encoded", how="inner").drop(["orlogid_encoded"],axis=1).rename({"new_person": "person_integer"},axis=1).sort_values(["person_integer"]).reset_index(drop=True)
 
-preops = preops.merge(new_index, on="orlogid_encoded", how="inner").drop(["orlogid_encoded"], axis=1).rename(
-    {"new_person": "person_integer"}, axis=1).sort_values(["person_integer"]).reset_index(drop=True)
+#preop_comb = pd.concat([preops, preops1], axis=0)
+
+preops = preops.merge(new_index, on="orlogid_encoded", how="inner").drop(["orlogid_encoded"], axis=1).rename({"new_person": "person_integer"},axis=1).sort_values(["person_integer"]).reset_index(drop=True)
 
 
 if 'preops' in modality_to_use:
@@ -538,25 +568,42 @@ if 'pmh' in modality_to_use:
 
 if 'flow' in modality_to_use:
     # flowsheet data
-    very_dense_flow = feather.read_feather(data_dir +"flow_ts/Imputed_very_dense_flow_wave0.feather")
-    very_dense_flow.drop(very_dense_flow[very_dense_flow['timepoint'] > 511].index, inplace=True)
-    very_dense_flow = very_dense_flow.merge(end_of_case_times[['orlogid_encoded', 'endtime']], on="orlogid_encoded")
-    very_dense_flow = very_dense_flow.loc[very_dense_flow['endtime'] > very_dense_flow['timepoint']]
-    very_dense_flow.drop(["endtime"], axis=1, inplace=True)
 
-    other_intra_flow_wlabs = feather.read_feather(data_dir +"flow_ts/Imputed_other_flow_wave0.feather")
-    other_intra_flow_wlabs.drop(other_intra_flow_wlabs[other_intra_flow_wlabs['timepoint'] > 511].index, inplace=True)
-    other_intra_flow_wlabs = other_intra_flow_wlabs.merge(end_of_case_times[['orlogid_encoded', 'endtime']],
+    very_dense_flow0 = feather.read_feather(data_dir +"flow_ts/Imputed_very_dense_flow_wave0.feather")
+    very_dense_flow0.drop(very_dense_flow0[very_dense_flow0['timepoint'] > 511].index, inplace=True)
+    very_dense_flow0 = very_dense_flow0.merge(end_of_case_times[['orlogid_encoded', 'endtime']], on="orlogid_encoded")
+    very_dense_flow0 = very_dense_flow0.loc[very_dense_flow0['endtime'] > very_dense_flow0['timepoint']]
+    very_dense_flow0.drop(["endtime"], axis=1, inplace=True)
+
+    other_intra_flow_wlabs0 = feather.read_feather(data_dir +"flow_ts/Imputed_other_flow_wave0.feather")
+    other_intra_flow_wlabs0.drop(other_intra_flow_wlabs0[other_intra_flow_wlabs0['timepoint'] > 511].index, inplace=True)
+    other_intra_flow_wlabs0 = other_intra_flow_wlabs0.merge(end_of_case_times[['orlogid_encoded', 'endtime']],
                                                           on="orlogid_encoded")
-    other_intra_flow_wlabs = other_intra_flow_wlabs.loc[
-        other_intra_flow_wlabs['endtime'] > other_intra_flow_wlabs['timepoint']]
-    other_intra_flow_wlabs.drop(["endtime"], axis=1, inplace=True)
+    other_intra_flow_wlabs0 = other_intra_flow_wlabs0.loc[other_intra_flow_wlabs0['endtime'] > other_intra_flow_wlabs0['timepoint']]
+    other_intra_flow_wlabs0.drop(["endtime"], axis=1, inplace=True)
 
-    very_dense_flow = very_dense_flow.merge(new_index, on="orlogid_encoded", how="inner").drop(["orlogid_encoded"],
-                                                                                               axis=1).rename(
-        {"new_person": "person_integer"}, axis=1)
-    other_intra_flow_wlabs = other_intra_flow_wlabs.merge(new_index, on="orlogid_encoded", how="inner").drop(
-        ["orlogid_encoded"], axis=1).rename({"new_person": "person_integer"}, axis=1)
+
+    very_dense_flow1 = feather.read_feather(data_dir1 +"flow_ts/Imputed_very_dense_flow.feather")
+    very_dense_flow1.drop(very_dense_flow1[very_dense_flow1['timepoint'] > 511].index, inplace=True)
+    very_dense_flow1['orlogid_encoded'] = very_dense_flow1['orlogid_encoded'].astype('str')
+    very_dense_flow1 = very_dense_flow1.merge(end_of_case_times[['orlogid_encoded', 'endtime']], on="orlogid_encoded")
+    very_dense_flow1 = very_dense_flow1.loc[very_dense_flow1['endtime'] > very_dense_flow1['timepoint']]
+    very_dense_flow1.drop(["endtime"], axis=1, inplace=True)
+
+    other_intra_flow_wlabs1 = feather.read_feather(data_dir1 +"flow_ts/Imputed_other_flow.feather")
+    other_intra_flow_wlabs1.drop(other_intra_flow_wlabs1[other_intra_flow_wlabs1['timepoint'] > 511].index, inplace=True)
+    other_intra_flow_wlabs1['orlogid_encoded'] = other_intra_flow_wlabs1['orlogid_encoded'].astype('str')
+    other_intra_flow_wlabs1 = other_intra_flow_wlabs1.merge(end_of_case_times[['orlogid_encoded', 'endtime']],on="orlogid_encoded")
+    other_intra_flow_wlabs1 = other_intra_flow_wlabs1.loc[other_intra_flow_wlabs1['endtime'] > other_intra_flow_wlabs1['timepoint']]
+    other_intra_flow_wlabs1.drop(["endtime"], axis=1, inplace=True)
+
+    very_dense_flow_comb = pd.concat([very_dense_flow0, very_dense_flow1], axis=0)
+    other_intra_flow_wlabs_comb = pd.concat([other_intra_flow_wlabs0, other_intra_flow_wlabs1], axis=0)
+
+
+    # merging on the right might have been better here because there were some cases that didn't have flowsheet data in the epic era. But that would introduce nans in the measure index column. However, the processing after this makes that redundant.
+    very_dense_flow = very_dense_flow_comb.merge(new_index, on="orlogid_encoded", how="inner").drop(["orlogid_encoded"],axis=1).rename({"new_person": "person_integer"}, axis=1)
+    other_intra_flow_wlabs = other_intra_flow_wlabs_comb.merge(new_index, on="orlogid_encoded", how="inner").drop(["orlogid_encoded"], axis=1).rename({"new_person": "person_integer"}, axis=1)
 
     """ TS flowsheet proprocessing """
     # need to convert the type of orlogid_encoded from object to int
@@ -1126,7 +1173,6 @@ for runNum in range(len(best_5_random_number)):
     total_train_loss = []
     total_test_loss = []
 
-
     updating_lr = learn_rate
     best_metric = 1000 # some large number
     lr_schedular_epoch_dict = {}
@@ -1396,4 +1442,3 @@ else:
 
     # Save the updated dictionary back to the pickle file
     with open(pred_filename, 'wb') as file: pickle.dump(existing_data, file)
-
