@@ -36,10 +36,13 @@ Code is available in `End_to_end_supervised/`
 6) `Training_with_ts_Optuna_hp_tuning.py`: Used for hyperparameter tuning using Optuna as an off the shelf method. Similar functionalities are `Training_with_TimeSeries.py` but in the context of hyper parameter tuning. Currently, the best trial is not saved and the inbuilt storage of optuna is not used (for future).
 7) `ts_model_class_Optuna_hp_tune.py`: Mostly, same as `preop_flow_med_bow_model.py` but used during hp tuning. Could be removed in future.
 8) `ts_optuna_hp_tuning_combined.sh`: Bash file that runs the hp tuning file `Training_with_ts_Optuna_hp_tuning.py` for different modality ablations and with different random seeds.
-9) `Tabnet_tabular.py`: [Tabnet](https://arxiv.org/pdf/1908.07442) [implementation](https://github.com/dreamquark-ai/tabnet) on the preoperative stage modalities trained in a supervised manner. It has a `bestModel` argument which when selected will read the HP tuned result files and retrain the models on the train+validation set of dataset. It also saves the models and performance metrics and prediction values on the common test set across all ablations and all 5 repetitions. This model doesn't use 'case year' variable because the categorical variables' levels are saved as a dict to be used when validating on external dataset and time changes!
-10) `Tabnet_tabular_HP_tuning.py`: Used for Tabnet HP tuning using Optuna. 
-11) `tabnet_optuna_hp_tuning.sh`: Bash file that runs Tabnet HP tuning file for different preoperative stage modalities with different random seeds.
-
+9) `Training_with_TS_Summary.py`: Uses only the summary of the time series. For flowsheets, for a fixed patient and measure index, mean, standard deviation, 20 and 80 percentile are used as summaries. For medications, each medication unit combination is treated as a feature with total combination dose as the feature value. These summaries are in a tabular format and devoid of time dimension so they are used to train a XGBT model.
+10) `Training_with_TSSummary_Optuna_hp_tuning.py` : Used for HP tuning in the time series summary setup.
+11) `tsSummary_optuna_hp_tuning_combined.sh`: Bash file to run the time series summary code. Input argument is task/outcome. 
+12) `Tabnet_tabular.py`: [Tabnet](https://arxiv.org/pdf/1908.07442) [implementation](https://github.com/dreamquark-ai/tabnet) on the preoperative stage modalities trained in a supervised manner. It has a `bestModel` argument which when selected will read the HP tuned result files and retrain the models on the train+validation set of dataset. It also saves the models and performance metrics and prediction values on the common test set across all ablations and all 5 repetitions. This model doesn't use 'case year' variable because the categorical variables' levels are saved as a dict to be used when validating on external dataset and time changes!
+13) `Tabnet_tabular_HP_tuning.py`: Used for Tabnet HP tuning using Optuna. 
+14) `tabnet_optuna_hp_tuning.sh`: Bash file that runs Tabnet HP tuning file for different preoperative stage modalities with different random seeds.
+15) `TS_MV_training.py`: Jointly trains a deep model (LSTM/Transformer) using all the data modalities available at the end of surgery from combined dataset from MetaVision and Epic era. Has a bestModel argument that reads the best HP setup and runs the final model. The Sex variable mapping is made consistent at the start of the code. Missingness masks are by default set to True.
 
 **For two stage self-supervised setup binary classification**
 Currently, for time series code for [TS2Vec](https://github.com/yuezhihan/ts2vec) is being used, for tabular preops and cbow [SCARF](https://github.com/clabrugere/pytorch-scarf/tree/master) method's code is being used, and for the outcomes there is only a projection head.
@@ -55,6 +58,8 @@ The best Hp is from the all modalities (including alerts and postop complication
 
 **Time validation of the trained models**
 1) `Tabular_wave2.py`: This file takes the modality to be used and reads all the best models and validates them on wave2 (another time duration than the training one) dataset.
+2) `TS_wave2.py` : This file takes the modality to be used and reads all the best models and validates them on wave2. Currently works for XGBTtimeseries summary models. #Todo fix for LSTM and MVCL.
+
 
 **Result compilation**
 1) `Result_compiler.ipynb` : Reads the pickle files that have best results for all ablations saved and takes the average and saves it all in a table.
@@ -82,4 +87,4 @@ If you are interested in using the learnt representation for preop modalities to
 
 #### 3) Hyperparameter tuning
 
-`Generating_HP_grid.py` is used to create a sobol grid and writes them in a format that can be submitted on a high performance computing server. It creates a file that can be launched using bash directly.
+`Generating_HP_grid.py` is used to create a sobol grid and writes them in a format that can be submitted on a high performance computing server. It creates a file that can be launched using bash directly. This was being used early for all methods. Currently, this is being used in the MVCL setup only. For other methods, optuna based files are used for HP tuning as described above.

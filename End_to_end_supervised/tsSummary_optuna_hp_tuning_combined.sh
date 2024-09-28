@@ -28,7 +28,6 @@ for number in "${numbers[@]}"
 do
   echo $number
   echo $1
-  echo $2
   python /codes/End_to_end_supervised/Training_withTSSummary_Optuna_hp_tuning.py --meds --task=$1  --randomSeed=$number
   python /codes/End_to_end_supervised/Training_withTSSummary_Optuna_hp_tuning.py --flow --task=$1  --randomSeed=$number
   python /codes/End_to_end_supervised/Training_withTSSummary_Optuna_hp_tuning.py --meds --flow --task=$1  --randomSeed=$number
