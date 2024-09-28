@@ -248,12 +248,20 @@ def preprocess_train(preops,task, y_outcome=None, binary_outcome=False, test_siz
 
     # median Imputing_ordinal variables
 
-    # imputing
+    # imputing even in the combined setup because there we have masks that will make sure that the model knows these are imputed values
     for i in ordinal_variables:
-        if np.isnan(preops[i].unique().min()) == True:
+        if (np.isnan(preops[i].unique().min()) == True):
             train[i].replace(train[i].unique().min(), train[i].median(), inplace=True)
             valid[i].replace(valid[i].unique().min(), train[i].median(), inplace=True)
             test[i].replace(test[i].unique().min(), train[i].median(), inplace=True)
+        elif (np.isnan(preops[i].unique()[0]) == True):
+            train[i].fillna(train[i].median(), inplace=True)
+            valid[i].fillna(train[i].median(), inplace=True)
+            test[i].fillna(train[i].median(), inplace=True)
+            if train[i].dtype == 'O':
+                train[i] = train[i].astype('int64')
+                valid[i] = valid[i].astype('int64')
+                test[i] = test[i].astype('int64')
 
     meta_Data["train_median_ord"] = [train[i].median() for i in ordinal_variables]
 

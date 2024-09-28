@@ -160,7 +160,7 @@ parser.add_argument("--task",  default="icu") #
 parser.add_argument("--drugNamesNo", default=True,  action='store_true') #
 parser.add_argument("--trainTime", default=True, action='store_true')
 parser.add_argument("--randomSeed", default=100, type=int )
-parser.add_argument("--includeMissingnessMasks", default=False, action='store_true')
+parser.add_argument("--includeMissingnessMasks", default=True, action='store_true')
 parser.add_argument("--overSampling", default=True, action='store_true') # keep it as False when task is endofcase
 parser.add_argument("--bestModel", default="False",
                     help='True when the best HP tuned settings are used on the train+valid setup')  #
@@ -213,6 +213,10 @@ end_of_case_times0 = end_of_case_times0[['orlogid_encoded', 'endtime']]
 preops1 = pd.read_csv(data_dir1 + 'epic_preop.csv')
 outcomes1 = pd.read_csv(data_dir1 + 'epic_outcomes.csv')
 end_of_case_times1 = outcomes1[['orlogid_encoded', 'endtime']]
+
+## keeping the mapping of Sex variable consistent between the two eras
+temp_map = {1:2, 2:1}
+preops0['Sex'] = preops0['Sex'].replace(temp_map)
 
 outcomes = pd.concat([outcomes0, outcomes1], axis=0)
 end_of_case_times = pd.concat([end_of_case_times0, end_of_case_times1], axis=0)
@@ -305,12 +309,6 @@ elif (args.task == 'mortality'):
     mortality_outcome['death_in_30'] = mortality_outcome['death_in_30'].astype(int)
     outcome_df = mortality_outcome
 
-    #mortality_outcome1 = outcomes1[['orlogid_encoded', 'death_in_30']]
-    #mortality_outcome1.loc[mortality_outcome1['death_in_30'] == True, 'death_in_30'] = 1
-    #mortality_outcome1.loc[mortality_outcome1['death_in_30'] == False, 'death_in_30'] = 0
-    #mortality_outcome1['death_in_30'] = mortality_outcome1['death_in_30'].astype(int)
-    #outcome_df1 = mortality_outcome1
-
 elif (args.task == 'aki1' or args.task == 'aki2' or args.task == 'aki3'):
     aki_outcome = outcomes[['orlogid_encoded', 'post_aki_status']]
     aki_outcome = aki_outcome.dropna(subset=[
@@ -394,7 +392,15 @@ if 'preops' in modality_to_use:
 
     to_drop_old_pmh_with_others = list(set(preops).intersection(to_drop_old_pmh_with_others))
     preops = preops.drop(columns=to_drop_old_pmh_with_others) # "['pre_aki_status', 'preop_ICU', 'AnestStop']
-    bow_input = pd.read_csv(data_dir + 'cbow_proc_text_mv.csv')
+
+
+    bow_input0 = pd.read_csv(data_dir + 'cbow_proc_text_mv.csv')
+    if "Unnamed: 0" in bow_input0.columns:  # because the csv file has index column
+        bow_input0.drop(columns=['Unnamed: 0'], inplace=True)
+    bow_input1 = pd.read_csv(data_dir1 + 'cbow_proc_text.csv')
+
+    bow_input = pd.concat([bow_input0, bow_input1], axis=0)
+
 
     bow_input = bow_input.merge(new_index, on="orlogid_encoded", how="inner").set_index('new_person').reindex(
         list(range(preops.index.min(), preops.index.max() + 1)), fill_value=0).reset_index().drop(
@@ -418,7 +424,12 @@ if 'preops' in modality_to_use:
 
 if 'homemeds' in modality_to_use:
     # home meds reading and processing
-    home_meds = pd.read_csv(data_dir + 'home_med_cui_mv.csv', low_memory=False)
+    home_meds0 = pd.read_csv(data_dir + 'home_med_cui_mv.csv', low_memory=False)
+    home_meds1 = pd.read_csv(data_dir1 + 'home_med_cui.csv', low_memory=False)
+
+    home_meds = pd.concat([home_meds0, home_meds1], axis=0)
+    home_meds['orlogid_encoded'] = home_meds['orlogid_encoded'].astype('str')
+
     Drg_pretrained_embedings = pd.read_csv(data_dir + 'df_cui_vec_2sourceMappedWODupl.csv')
 
     # home_meds[["orlogid_encoded","rxcui"]].groupby("orlogid_encoded").agg(['count'])
@@ -495,9 +506,13 @@ if 'homemeds' in modality_to_use:
     config['Att_HM_agg_Heads'] = args.AttentionHomeMedsAggHeads
 
 if 'pmh' in modality_to_use:
-    pmh_emb_sb = pd.read_csv(data_dir + 'pmh_sherbert_mv.csv')
+    pmh_emb_sb0 = pd.read_csv(data_dir + 'pmh_sherbert_mv.csv')
+    pmh_emb_sb1 = pd.read_csv(data_dir1 + 'pmh_sherbert.csv')
 
+    pmh_emb_sb = pd.concat([pmh_emb_sb0, pmh_emb_sb1], axis=0)
+    pmh_emb_sb['orlogid_encoded'] = pmh_emb_sb['orlogid_encoded'].astype('str')
     if args.pmhform == 'embedding_sum':
+        pmh_emb_sb.drop(columns=['ICD_10_CODES'], inplace=True)  # although the next groupby sum is capable of removing this column, explicit removal is better
         pmh_emb_sb = pmh_emb_sb.groupby("orlogid_encoded").sum().reset_index()
         pmh_emb_sb_final = pmh_emb_sb.merge(new_index, on="orlogid_encoded", how="inner").set_index('new_person').reindex(list(range(preops.index.min(), preops.index.max() + 1)), fill_value=0).reset_index().drop(["orlogid_encoded"], axis=1).rename(
             {"new_person": "person_integer"}, axis=1).sort_values(["person_integer"]).reset_index(drop=True).drop(["person_integer"], axis=1)
@@ -635,12 +650,23 @@ if 'flow' in modality_to_use:
 
 if 'meds' in modality_to_use:
     # reading the med files
-    all_med_data = feather.read_feather(data_dir + 'med_ts/intraop_meds_filterd_wave0.feather')
-    all_med_data.drop(all_med_data[all_med_data['time'] > 511].index, inplace=True)
-    all_med_data.drop(all_med_data[all_med_data['time'] < 0].index, inplace=True)  # there are some negative time points  ## TODO: i think it had some meaning; check this
-    all_med_data = all_med_data.merge(end_of_case_times[['orlogid_encoded', 'endtime']], on="orlogid_encoded")
-    all_med_data = all_med_data.loc[all_med_data['endtime'] > all_med_data['time']]
-    all_med_data.drop(["endtime"], axis=1, inplace=True)
+    all_med_data0 = feather.read_feather(data_dir + 'med_ts/intraop_meds_filterd_wave0.feather')
+    all_med_data0.drop(all_med_data0[all_med_data0['time'] > 511].index, inplace=True)
+    all_med_data0.drop(all_med_data0[all_med_data0['time'] < 0].index, inplace=True)  # there are some negative time points  ## TODO: i think it had some meaning; check this
+    all_med_data0 = all_med_data0.merge(end_of_case_times[['orlogid_encoded', 'endtime']], on="orlogid_encoded")
+    all_med_data0 = all_med_data0.loc[all_med_data0['endtime'] > all_med_data0['time']]
+    all_med_data0.drop(["endtime"], axis=1, inplace=True)
+
+
+    all_med_data1 = feather.read_feather(data_dir1 + 'med_ts/intraop_meds_filterd.feather')
+    all_med_data1.drop(all_med_data1[all_med_data1['time'] > 511].index, inplace=True)
+    all_med_data1.drop(all_med_data1[all_med_data1['time'] < 0].index, inplace=True)  # there are some negative time points  ## TODO: i think it had some meaning; check this
+    all_med_data1['orlogid_encoded'] = all_med_data1['orlogid_encoded'].astype('str')
+    all_med_data1 = all_med_data1.merge(end_of_case_times[['orlogid_encoded', 'endtime']], on="orlogid_encoded")
+    all_med_data1 = all_med_data1.loc[all_med_data1['endtime'] > all_med_data1['time']]
+    all_med_data1.drop(["endtime"], axis=1, inplace=True)
+
+    all_med_data = pd.concat([all_med_data0, all_med_data1], axis=0)
 
     ## Special med * unit comb encoding
     all_med_data['med_unit_comb'] = list(zip(all_med_data['med_integer'], all_med_data['unit_integer']))
@@ -654,8 +680,8 @@ if 'meds' in modality_to_use:
     a.sort_values(by=['med_integer','med_unit_combo'], inplace=True)
 
 
-    group_start = (torch.tensor(a['med_integer']) != torch.roll(torch.tensor(a['med_integer']), 1)).nonzero().squeeze()  +1 # this one is needed becasue otherwise there was some incompatibbility while the embeddginff for the combination are being created.
-    group_end = (torch.tensor(a['med_integer']) != torch.roll(torch.tensor(a['med_integer']), -1)).nonzero().squeeze() +1 # this one is needed becasue otherwise there was some incompatibbility while the embeddginff for the combination are being created.
+    group_start = (torch.tensor(a['med_integer']) != torch.roll(torch.tensor(a['med_integer']), 1)).nonzero().squeeze()  +1 # this one is needed becasue otherwise there was some incompatibbility while the embedding for the combination are being created.
+    group_end = (torch.tensor(a['med_integer']) != torch.roll(torch.tensor(a['med_integer']), -1)).nonzero().squeeze() +1 # this one is needed becasue otherwise there was some incompatibbility while the embedding for the combination are being created.
 
     group_start = torch.cat((torch.tensor(0).reshape((1)), group_start)) # prepending 0 to make sure that it is treated as an empty slot
     group_end = torch.cat((torch.tensor(0).reshape((1)), group_end)) # prepending 0 to make sure that it is treated as an empty slot
@@ -866,10 +892,8 @@ for runNum in range(len(best_5_random_number)):
         train_index = train.index
         valid_index = valid.index
         test_index = test.index
-
-        # if args.task == 'icu':  # this part is basically dropping the planned icu cases from the evaluation set
-        #     test_index = preops.iloc[test_index][preops.iloc[test_index]['plannedDispo'] != 'ICU'][
-        #         'plannedDispo'].index
+        if args.task == 'icu':  # this part is basically dropping the planned icu cases from the evaluation set
+            test_index = preops.iloc[test_index][preops.iloc[test_index]['plannedDispo'] != 'ICU']['plannedDispo'].index
 
     if 'preops' in modality_to_use:
         # currently sacrificing 5 data points in the valid set and using the test set to finally compute the auroc etc
@@ -883,9 +907,9 @@ for runNum in range(len(best_5_random_number)):
             valid_size=0.05, random_state=int(best_5_random_number[runNum]), input_dr=data_dir,
             output_dr=out_dir)  # TODO: change back to 0.00005
 
-        # if args.task == 'icu':  # this part is basically dropping the planned icu cases from the evaluation set (value of plannedDispo are numeric after processing; the df has also been changed )
-        #     test_index = preops.iloc[test_index][preops.iloc[test_index]['plannedDispo'] != 3]['plannedDispo'].index
-        #     preops_te = preops_te.iloc[test_index]
+        if args.task == 'icu':  # this part is basically dropping the planned icu cases from the evaluation set (value of plannedDispo are numeric after processing; the df has also been changed )
+            test_index = preops.iloc[test_index][preops.iloc[test_index]['plannedDispo'] != 3]['plannedDispo'].index
+            preops_te = preops_te.iloc[test_index]
 
         preop_mask_counter = 0
         num_preop_features = len(preops_tr.columns)
@@ -902,7 +926,6 @@ for runNum in range(len(best_5_random_number)):
 
         config['input_shape'] = num_preop_features + preop_mask_counter * num_preop_features,  # this is done so that I dont have to write a seperate condition for endofcase where the current time is being appended to preops
         config['input_shape_bow'] = len(bow_input.columns)
-
 
         if eval(args.bestModel) == True:
             config['hidden_units'] = param_values['hidden_units']
