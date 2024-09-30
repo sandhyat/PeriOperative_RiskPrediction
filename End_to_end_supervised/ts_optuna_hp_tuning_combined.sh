@@ -37,3 +37,36 @@ do
   python /codes/End_to_end_supervised/Training_with_ts_Optuna_hp_tuning.py --meds --flow --preops --homemeds --task=$1 --modelType=$2 --randomSeed=$number
   python /codes/End_to_end_supervised/Training_with_ts_Optuna_hp_tuning.py --meds --flow --preops --homemeds --pmhProblist --task=$1 --modelType=$2 --randomSeed=$number
 done
+
+#python /codes/End_to_end_supervised/Training_with_ts_Optuna_hp_tuning.py --meds --flow --task='mortality' --modelType=lstm --randomSeed=219 --numtrialsHP=5
+#python /codes/End_to_end_supervised/Training_with_ts_Optuna_hp_tuning.py --meds --flow --preops --task='mortality' --modelType=lstm --randomSeed=219 --numtrialsHP=5
+#python /codes/End_to_end_supervised/Training_with_ts_Optuna_hp_tuning.py --meds --flow --preops --homemeds --task='mortality' --modelType=lstm --randomSeed=219 --numtrialsHP=5
+#python /codes/End_to_end_supervised/Training_with_ts_Optuna_hp_tuning.py --meds --flow --preops --homemeds --pmhProblist --task='mortality' --modelType=lstm --randomSeed=219 --numtrialsHP=5
+
+#python /codes/End_to_end_supervised/Training_with_ts_Optuna_hp_tuning.py --meds --task='aki2' --modelType=lstm --randomSeed=219 --numtrialsHP=3
+#python /codes/End_to_end_supervised/Training_with_ts_Optuna_hp_tuning.py --flow --task='aki2' --modelType=lstm --randomSeed=219 --numtrialsHP=3
+#python /codes/End_to_end_supervised/Training_with_ts_Optuna_hp_tuning.py --meds --flow --task='aki2' --modelType=lstm --randomSeed=219 --numtrialsHP=3
+#python /codes/End_to_end_supervised/Training_with_ts_Optuna_hp_tuning.py --meds --flow --preops --task='aki2' --modelType=lstm --randomSeed=219 --numtrialsHP=3
+#python /codes/End_to_end_supervised/Training_with_ts_Optuna_hp_tuning.py --meds --flow --preops --homemeds --task='aki2' --modelType=lstm --randomSeed=219 --numtrialsHP=3
+#python /codes/End_to_end_supervised/Training_with_ts_Optuna_hp_tuning.py --meds --flow --preops --homemeds --pmhProblist --task='aki2' --modelType=lstm --randomSeed=219 --numtrialsHP=3
+
+#python /codes/End_to_end_supervised/Training_with_ts_Optuna_hp_tuning.py --meds --task='postop_los' --modelType=lstm --randomSeed=219 --numtrialsHP=3
+#python /codes/End_to_end_supervised/Training_with_ts_Optuna_hp_tuning.py --flow --task='postop_los' --modelType=lstm --randomSeed=219 --numtrialsHP=3
+#python /codes/End_to_end_supervised/Training_with_ts_Optuna_hp_tuning.py --meds --flow --task='postop_los' --modelType=lstm --randomSeed=219 --numtrialsHP=3
+#python /codes/End_to_end_supervised/Training_with_ts_Optuna_hp_tuning.py --meds --flow --preops --task='postop_los' --modelType=lstm --randomSeed=219 --numtrialsHP=3
+#python /codes/End_to_end_supervised/Training_with_ts_Optuna_hp_tuning.py --meds --flow --preops --homemeds --task='postop_los' --modelType=lstm --randomSeed=219 --numtrialsHP=3
+#python /codes/End_to_end_supervised/Training_with_ts_Optuna_hp_tuning.py --meds --flow --preops --homemeds --pmhProblist --task='postop_los' --modelType=lstm --randomSeed=219 --numtrialsHP=3
+
+#python /codes/End_to_end_supervised/Training_with_ts_Optuna_hp_tuning.py --meds --task='opioids_count_day0' --modelType=lstm --randomSeed=219 --numtrialsHP=3
+#python /codes/End_to_end_supervised/Training_with_ts_Optuna_hp_tuning.py --flow --task='opioids_count_day0' --modelType=lstm --randomSeed=219 --numtrialsHP=3
+#python /codes/End_to_end_supervised/Training_with_ts_Optuna_hp_tuning.py --meds --flow --task='opioids_count_day0' --modelType=lstm --randomSeed=219 --numtrialsHP=3
+#python /codes/End_to_end_supervised/Training_with_ts_Optuna_hp_tuning.py --meds --flow --preops --task='opioids_count_day0' --modelType=lstm --randomSeed=219 --numtrialsHP=3
+#python /codes/End_to_end_supervised/Training_with_ts_Optuna_hp_tuning.py --meds --flow --preops --homemeds --task='opioids_count_day0' --modelType=lstm --randomSeed=219 --numtrialsHP=3
+#python /codes/End_to_end_supervised/Training_with_ts_Optuna_hp_tuning.py --meds --flow --preops --homemeds --pmhProblist --task='opioids_count_day0' --modelType=lstm --randomSeed=219 --numtrialsHP=3
+
+#python /codes/End_to_end_supervised/Training_with_ts_Optuna_hp_tuning.py --meds --task='opioids_count_day1' --modelType=lstm --randomSeed=219 --numtrialsHP=3
+#python /codes/End_to_end_supervised/Training_with_ts_Optuna_hp_tuning.py --flow --task='opioids_count_day1' --modelType=lstm --randomSeed=219 --numtrialsHP=3
+#python /codes/End_to_end_supervised/Training_with_ts_Optuna_hp_tuning.py --meds --flow --task='opioids_count_day1' --modelType=lstm --randomSeed=219 --numtrialsHP=3
+#python /codes/End_to_end_supervised/Training_with_ts_Optuna_hp_tuning.py --meds --flow --preops --task='opioids_count_day1' --modelType=lstm --randomSeed=219 --numtrialsHP=3
+#python /codes/End_to_end_supervised/Training_with_ts_Optuna_hp_tuning.py --meds --flow --preops --homemeds --task='opioids_count_day1' --modelType=lstm --randomSeed=219 --numtrialsHP=3
+#python /codes/End_to_end_supervised/Training_with_ts_Optuna_hp_tuning.py --meds --flow --preops --homemeds --pmhProblist --task='opioids_count_day1' --modelType=lstm --randomSeed=219 --numtrialsHP=3
