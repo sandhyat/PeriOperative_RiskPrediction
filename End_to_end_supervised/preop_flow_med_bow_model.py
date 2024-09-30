@@ -1077,7 +1077,7 @@ class TS_Transformer_Med_index(nn.Module):
         """  time series flowsheet """
         if 'flow' in self.modality_to_use:
             flowsheets = data_dict['flow']
-
+            flowsheets = flowsheets.to(torch.float32) # this is being done because when the missingness mask is active at that time the datatype is float64 which is not consistent with the datatype of bias during the iniitialization.
             if self.cnn_before_Att == True:
                 flowsheets0 = torch.transpose(flowsheets, 1, 2)
                 flowsheets_aftercnn = self.conv1d_flow(flowsheets0)
@@ -1100,7 +1100,7 @@ class TS_Transformer_Med_index(nn.Module):
             all_rep.append(final_for_mlp)
 
         elif 'flow' in self.modality_to_use:
-            if False:
+            if True:
                 bs = flowsheets_embedded.size(0)
                 final_for_TEncoder = torch.cat((self.class_token_TS.expand(bs, -1, -1), flowsheets_embedded),1)  # the init token does the part of cls
 
