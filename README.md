@@ -22,6 +22,7 @@ Based on varying algorithm complexity the approaches mentioned can be explained 
 
 ## Setups
 
+Detailed description about the directory structure, input, output and other information is available in the `DetailedDescription.md`.
 
 #### 1) Data and Architecture adaptation format  
 
