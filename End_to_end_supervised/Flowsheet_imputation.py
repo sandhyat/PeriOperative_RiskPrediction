@@ -268,9 +268,9 @@ def preprocess_train(preops, data_dir, test_size=0.2):
     meta_Data["continuous_variables"] = continuous_variables
     meta_Data["column_all_names"] = list(preops_ohe.columns)
 
-    # output_file_name = '/home/trips/PeriOperative_RiskPrediction/Xgboost_model_Other_flow/preops_metadata_fromflowsheet_imp.json'
+    output_file_name = data_dir + 'flow_ts/Xgboost_model_Other_flow/preops_metadata_fromflowsheet_imp.json'
     # output_file_name = data_dir+ 'flow_ts/Xgboost_model_Other_flow_wave2/preops_metadata_fromflowsheet_imp.json'
-    output_file_name = data_dir+ 'flow_ts/Xgboost_model_Other_flow_wave0/preops_metadata_fromflowsheet_imp.json'
+    #output_file_name = data_dir+ 'flow_ts/Xgboost_model_Other_flow_wave0/preops_metadata_fromflowsheet_imp.json'
 
 
     with open(output_file_name, 'w') as outfile:
@@ -304,11 +304,12 @@ def flowsheet_imputer_estimate_generator_training(first_flow, preops, inp_data_d
         other_flow_est[i] = xgb_reg.predict(preops_ohe.drop(columns=['orlogid_encoded']))
         # xgb_reg.save_model("/home/trips/PeriOperative_RiskPrediction/Xgboost_model_Other_flow/Measure_"+str(i)+".json")
         # xgb_reg.save_model(inp_data_dir + "flow_ts/Xgboost_model_Other_flow_wave2/Measure_" + str(i) + ".json")
-        xgb_reg.save_model(inp_data_dir + "flow_ts/Xgboost_model_Other_flow_wave0/Measure_"+str(i)+".json")
-
-    # other_flow_est.to_csv("/home/trips/PeriOperative_RiskPrediction/Xgboost_model_Other_flow/Other_flow_0time_imputedvalues.csv")
+        #xgb_reg.save_model(inp_data_dir + "flow_ts/Xgboost_model_Other_flow_wave0/Measure_"+str(i)+".json")
+        breakpoint()
+        xgb_reg.save_model(inp_data_dir + "flow_ts/Xgboost_model_Other_flow_wave/Measure_"+str(i)+".json")
+    other_flow_est.to_csv(inp_data_dir + "flow_ts/Xgboost_model_Other_flow/Other_flow_0time_imputedvalues.csv")
     # other_flow_est.to_csv(inp_data_dir + "flow_ts/Xgboost_model_Other_flow_wave2/Other_flow_0time_imputedvalues.csv")
-    other_flow_est.to_csv(inp_data_dir + "flow_ts/Xgboost_model_Other_flow_wave0/Other_flow_0time_imputedvalues.csv")
+    # other_flow_est.to_csv(inp_data_dir + "flow_ts/Xgboost_model_Other_flow_wave0/Other_flow_0time_imputedvalues.csv")
     return
 
 # this has a lot of issues so wrote a new function which is cleaner
@@ -518,9 +519,9 @@ def flowsheet_imputation_training(very_dense_flow, other_intra_flow_wlabs, inp_d
         , other_intra_flow_wlabs.set_index(['orlogid_encoded', 'measure_index', 'timepoint']).groupby(by=['orlogid_encoded','measure_index']).diff().dropna().reset_index()
         ], ignore_index=True)
     """  Saving the recoded (coordinate format) and imputed data to feather files so that it is easily available """
-    # other_intra_flow_wlabs_imputed.to_feather('/home/trips/PeriOperative_RiskPrediction/Imputed_other_flow.feather')
+    other_intra_flow_wlabs_imputed.to_feather('/home/trips/PeriOperative_RiskPrediction/Imputed_other_flow.feather')
     # other_intra_flow_wlabs_imputed.to_feather(inp_data_dir + 'flow_ts/Imputed_other_flow_wave2.feather')
-    other_intra_flow_wlabs_imputed.to_feather(inp_data_dir + 'flow_ts/Imputed_other_flow_wave0.feather')
+    #other_intra_flow_wlabs_imputed.to_feather(inp_data_dir + 'flow_ts/Imputed_other_flow_wave0.feather')
 
 
     """ VERY DENSE DATA """
@@ -547,29 +548,29 @@ def flowsheet_imputation_training(very_dense_flow, other_intra_flow_wlabs, inp_d
     """  Saving the recoded (coordinate format) and imputed data to feather files so that it is easily available """
     # very_dense_flow_coord_with0timeforall.to_feather('/home/trips/PeriOperative_RiskPrediction/Imputed_very_dense_flow.feather')
     # very_dense_flow_coord_with0timeforall.to_feather(inp_data_dir + 'flow_ts/Imputed_very_dense_flow_wave2.feather')
-    very_dense_flow_coord_with0timeforall.to_feather(inp_data_dir + 'flow_ts/Imputed_very_dense_flow_wave0.feather')
+    # very_dense_flow_coord_with0timeforall.to_feather(inp_data_dir + 'flow_ts/Imputed_very_dense_flow_wave0.feather')
 
     end_time = datetime.now()
 
     timetaken = end_time - start_time
     print("time taken to run the imputation script", timetaken)
 
-if False:
+if True:
     # reading files
-    # data_dir = '/mnt/ris/ActFastExports/v1.3.2/'
-    # data_dir = '/input/'
+    # data_dir = '/mnt/ris/ActFastExports/v1.3.3/'
+    data_dir = '/input/'
     # data_dir = '/mnt/ris/ActFastExports/v1.3.3/mv_data/'
-    data_dir = '/input/' + 'mv_data/'
+    # data_dir = '/input/' + 'mv_data/'
 
-    # first_imputer_path = data_dir+ "flow_ts/Xgboost_model_Other_flow/Other_flow_0time_imputedvalues.csv"
+    first_imputer_path = data_dir+ "flow_ts/Xgboost_model_Other_flow/Other_flow_0time_imputedvalues.csv"
     # first_imputer_path = data_dir+ "flow_ts/Xgboost_model_Other_flow_wave2/Other_flow_0time_imputedvalues.csv"
-    first_imputer_path = data_dir+ "flow_ts/Xgboost_model_Other_flow_wave0/Other_flow_0time_imputedvalues.csv"
+    #first_imputer_path = data_dir+ "flow_ts/Xgboost_model_Other_flow_wave0/Other_flow_0time_imputedvalues.csv"
 
     if(not os.path.exists(first_imputer_path)):
-        # preops = pd.read_csv(data_dir + 'epic_preop.csv')
+        preops = pd.read_csv(data_dir + 'epic_preop.csv')
         # preops = pd.read_csv(data_dir + 'epic_preop_wave2.csv')
-        preops_wave0 = pd.read_csv(data_dir+'mv_preop.csv')
-        preops_wave0 = preops_wave0.drop_duplicates(subset=['orlogid_encoded'])
+        # preops_wave0 = pd.read_csv(data_dir+'mv_preop.csv')
+        # preops_wave0 = preops_wave0.drop_duplicates(subset=['orlogid_encoded'])
 
         # to drop the old pmh and problem list
         to_drop_old_pmh_problist_with_others = ["MentalHistory_anxiety", "MentalHistory_bipolar",
@@ -596,36 +597,36 @@ if False:
                                     'CLARITY, URINE', 'COLOR, URINE',
                                     'GLUCOSE, URINE, QUALITATIVE', 'URINE BLOOD', 'URINE KETONES', 'AnestStop']
 
-        # preops = preops.drop(columns=to_drop_old_pmh_problist_with_others)
-        # preops = preops.drop(columns=to_drop_old_pmh_problist)
-        to_drop_old_pmh_problist = list(set(preops_wave0).intersection(to_drop_old_pmh_problist))
-        preops_wave0 = preops_wave0.drop(columns=to_drop_old_pmh_problist)
+        preops = preops.drop(columns=to_drop_old_pmh_problist_with_others)
+        #preops = preops.drop(columns=to_drop_old_pmh_problist)
+        #to_drop_old_pmh_problist = list(set(preops_wave0).intersection(to_drop_old_pmh_problist))
+        #preops_wave0 = preops_wave0.drop(columns=to_drop_old_pmh_problist)
 
 
 
         # first values
-        # first_flow = feather.read_feather(data_dir + 'flow_ts/first_flow.feather')
+        first_flow = feather.read_feather(data_dir + 'flow_ts/first_flow.feather')
         # first_flow = feather.read_feather(data_dir + 'flow_ts/first_flow_wave2.feather')
         # flowsheet_imputer_estimate_generator_training(first_flow, preops, data_dir)
 
-        if (not os.path.exists(data_dir + 'flow_ts/first_flow_wave0.feather')):
-            full_other_labs = feather.read_feather(data_dir + 'flow_ts/other_intra_flow_with_labs_wave0.feather')
-            full_other_labs = full_other_labs.sort_values(by=['orlogid_encoded', 'timepoint', 'measure_index']) # sort
-            first_flow = full_other_labs.groupby(['orlogid_encoded', 'measure_index']).first().reset_index() # groupby and pick the first row in the grouped df
-        else:
-            first_flow = feather.read_feather(data_dir + 'flow_ts/first_flow_wave0.feather')
-        flowsheet_imputer_estimate_generator_training(first_flow, preops_wave0, data_dir)
+        #if (not os.path.exists(data_dir + 'flow_ts/first_flow_wave0.feather')):
+        #    full_other_labs = feather.read_feather(data_dir + 'flow_ts/other_intra_flow_with_labs_wave0.feather')
+        #    full_other_labs = full_other_labs.sort_values(by=['orlogid_encoded', 'timepoint', 'measure_index']) # sort
+        #    first_flow = full_other_labs.groupby(['orlogid_encoded', 'measure_index']).first().reset_index() # groupby and pick the first row in the grouped df
+        #else:
+        #    first_flow = feather.read_feather(data_dir + 'flow_ts/first_flow_wave0.feather')
+        flowsheet_imputer_estimate_generator_training(first_flow, preops, data_dir)
 
 
-    # very_dense_flow = feather.read_feather(data_dir + 'flow_ts/very_dense_flow.feather')
-    # other_intra_flow_wlabs = feather.read_feather(data_dir + 'flow_ts/other_intra_flow_wlabs.feather')
-    # other_intra_flow_wlabs.drop(other_intra_flow_wlabs[other_intra_flow_wlabs['timepoint'] < 0].index, inplace=True)
+    very_dense_flow = feather.read_feather(data_dir + 'flow_ts/very_dense_flow.feather')
+    other_intra_flow_wlabs = feather.read_feather(data_dir + 'flow_ts/other_intra_flow_wlabs.feather')
+    other_intra_flow_wlabs.drop(other_intra_flow_wlabs[other_intra_flow_wlabs['timepoint'] < 0].index, inplace=True)
 
     # very_dense_flow = feather.read_feather(data_dir + 'flow_ts/very_dense_flow_wave2.feather')
     # other_intra_flow_wlabs = feather.read_feather(data_dir + 'flow_ts/other_intra_flow_wlabs_wave2.feather')
     # other_intra_flow_wlabs.drop(other_intra_flow_wlabs[other_intra_flow_wlabs['timepoint'] < 0].index, inplace=True)
 
-    very_dense_flow = feather.read_feather(data_dir + 'flow_ts/very_dense_flow_wave0.feather')
-    other_intra_flow_wlabs = feather.read_feather(data_dir + 'flow_ts/other_intra_flow_with_labs_wave0.feather')
-    other_intra_flow_wlabs.drop(other_intra_flow_wlabs[other_intra_flow_wlabs['timepoint'] < 0].index, inplace=True)
+    # very_dense_flow = feather.read_feather(data_dir + 'flow_ts/very_dense_flow_wave0.feather')
+    # other_intra_flow_wlabs = feather.read_feather(data_dir + 'flow_ts/other_intra_flow_with_labs_wave0.feather')
+    # other_intra_flow_wlabs.drop(other_intra_flow_wlabs[other_intra_flow_wlabs['timepoint'] < 0].index, inplace=True)
     flowsheet_imputation_training(very_dense_flow, other_intra_flow_wlabs, data_dir)
