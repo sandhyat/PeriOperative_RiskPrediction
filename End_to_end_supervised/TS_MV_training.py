@@ -194,24 +194,22 @@ if eval('args.flow') == True:
 if eval('args.meds') == True:
     modality_to_use.append('meds')
 
-# data_dir = '/mnt/ris/ActFastExports/v1.3.3/mv_data/'
-data_dir = '/input/' +'mv_data/'
-data_dir1 = '/input1/'
-
+#data_dir = '/mnt/ris/ActFastExports/v1.3.3/'
+data_dir = '/input/'
 
 # out_dir = './'
 out_dir = '/output/'
 
-preops0 = pd.read_csv(data_dir + 'mv_preop.csv')
+preops0 = pd.read_csv(data_dir + 'mv_data/mv_preop.csv')
 preops0 = preops0.drop_duplicates(subset=['orlogid_encoded'])
-outcomes0 = pd.read_csv(data_dir + 'outcomes_mv.csv')
+outcomes0 = pd.read_csv(data_dir + 'mv_data/outcomes_mv.csv')
 outcomes0 = outcomes0.dropna(subset=['orlogid_encoded'])
-end_of_case_times0 = feather.read_feather(data_dir + 'end_of_case_times_wave0.feather')
+end_of_case_times0 = feather.read_feather(data_dir + 'mv_data/end_of_case_times_wave0.feather')
 
 end_of_case_times0 = end_of_case_times0[['orlogid_encoded', 'endtime']]
 
-preops1 = pd.read_csv(data_dir1 + 'epic_preop.csv')
-outcomes1 = pd.read_csv(data_dir1 + 'epic_outcomes.csv')
+preops1 = pd.read_csv(data_dir + 'epic_preop.csv')
+outcomes1 = pd.read_csv(data_dir + 'epic_outcomes.csv')
 end_of_case_times1 = outcomes1[['orlogid_encoded', 'endtime']]
 
 ## keeping the mapping of Sex variable consistent between the two eras
@@ -394,10 +392,10 @@ if 'preops' in modality_to_use:
     preops = preops.drop(columns=to_drop_old_pmh_with_others) # "['pre_aki_status', 'preop_ICU', 'AnestStop']
 
 
-    bow_input0 = pd.read_csv(data_dir + 'cbow_proc_text_mv.csv')
+    bow_input0 = pd.read_csv(data_dir + 'mv_data/cbow_proc_text_mv.csv')
     if "Unnamed: 0" in bow_input0.columns:  # because the csv file has index column
         bow_input0.drop(columns=['Unnamed: 0'], inplace=True)
-    bow_input1 = pd.read_csv(data_dir1 + 'cbow_proc_text.csv')
+    bow_input1 = pd.read_csv(data_dir + 'cbow_proc_text.csv')
 
     bow_input = pd.concat([bow_input0, bow_input1], axis=0)
 
@@ -424,8 +422,8 @@ if 'preops' in modality_to_use:
 
 if 'homemeds' in modality_to_use:
     # home meds reading and processing
-    home_meds0 = pd.read_csv(data_dir + 'home_med_cui_mv.csv', low_memory=False)
-    home_meds1 = pd.read_csv(data_dir1 + 'home_med_cui.csv', low_memory=False)
+    home_meds0 = pd.read_csv(data_dir + 'mv_data/home_med_cui_mv.csv', low_memory=False)
+    home_meds1 = pd.read_csv(data_dir + 'home_med_cui.csv', low_memory=False)
 
     home_meds = pd.concat([home_meds0, home_meds1], axis=0)
     home_meds['orlogid_encoded'] = home_meds['orlogid_encoded'].astype('str')
@@ -504,10 +502,11 @@ if 'homemeds' in modality_to_use:
     config['input_shape_hm'] = hm_input_dim
     config['Att_HM_Agg'] = args.AttentionHhomeMedsAgg
     config['Att_HM_agg_Heads'] = args.AttentionHomeMedsAggHeads
+    breakpoint()
 
 if 'pmh' in modality_to_use:
-    pmh_emb_sb0 = pd.read_csv(data_dir + 'pmh_sherbert_mv.csv')
-    pmh_emb_sb1 = pd.read_csv(data_dir1 + 'pmh_sherbert.csv')
+    pmh_emb_sb0 = pd.read_csv(data_dir + 'mv_data/pmh_sherbert_mv.csv')
+    pmh_emb_sb1 = pd.read_csv(data_dir + 'pmh_sherbert.csv')
 
     pmh_emb_sb = pd.concat([pmh_emb_sb0, pmh_emb_sb1], axis=0)
     pmh_emb_sb['orlogid_encoded'] = pmh_emb_sb['orlogid_encoded'].astype('str')
@@ -545,6 +544,7 @@ if 'pmh' in modality_to_use:
     config['Att_pmh_Agg'] = args.AttentionPmhAgg
     config['AttPmhAgg_Heads'] = args.AttPmhAggHeads
 
+    breakpoint()
 # if 'problist' in modality_to_use:
 #     prob_list_emb_sb = pd.read_csv(data_dir + 'preproblems_sherbert.csv')
 #
@@ -580,17 +580,16 @@ if 'pmh' in modality_to_use:
 #     config['weight_decay_problistL1'] = args.problistL1
 #     config['input_shape_problist'] = problist_input_dim
 #     config['Att_problist_Agg'] = args.AttentionProblistAgg
-
 if 'flow' in modality_to_use:
     # flowsheet data
 
-    very_dense_flow0 = feather.read_feather(data_dir +"flow_ts/Imputed_very_dense_flow_wave0.feather")
+    very_dense_flow0 = feather.read_feather(data_dir +"mv_data/flow_ts/Imputed_very_dense_flow_wave0.feather")
     very_dense_flow0.drop(very_dense_flow0[very_dense_flow0['timepoint'] > 511].index, inplace=True)
     very_dense_flow0 = very_dense_flow0.merge(end_of_case_times[['orlogid_encoded', 'endtime']], on="orlogid_encoded")
     very_dense_flow0 = very_dense_flow0.loc[very_dense_flow0['endtime'] > very_dense_flow0['timepoint']]
     very_dense_flow0.drop(["endtime"], axis=1, inplace=True)
 
-    other_intra_flow_wlabs0 = feather.read_feather(data_dir +"flow_ts/Imputed_other_flow_wave0.feather")
+    other_intra_flow_wlabs0 = feather.read_feather(data_dir +"mv_data/flow_ts/Imputed_other_flow_wave0.feather")
     other_intra_flow_wlabs0.drop(other_intra_flow_wlabs0[other_intra_flow_wlabs0['timepoint'] > 511].index, inplace=True)
     other_intra_flow_wlabs0 = other_intra_flow_wlabs0.merge(end_of_case_times[['orlogid_encoded', 'endtime']],
                                                           on="orlogid_encoded")
@@ -598,14 +597,14 @@ if 'flow' in modality_to_use:
     other_intra_flow_wlabs0.drop(["endtime"], axis=1, inplace=True)
 
 
-    very_dense_flow1 = feather.read_feather(data_dir1 +"flow_ts/Imputed_very_dense_flow.feather")
+    very_dense_flow1 = feather.read_feather(data_dir +"flow_ts/Imputed_very_dense_flow.feather")
     very_dense_flow1.drop(very_dense_flow1[very_dense_flow1['timepoint'] > 511].index, inplace=True)
     very_dense_flow1['orlogid_encoded'] = very_dense_flow1['orlogid_encoded'].astype('str')
     very_dense_flow1 = very_dense_flow1.merge(end_of_case_times[['orlogid_encoded', 'endtime']], on="orlogid_encoded")
     very_dense_flow1 = very_dense_flow1.loc[very_dense_flow1['endtime'] > very_dense_flow1['timepoint']]
     very_dense_flow1.drop(["endtime"], axis=1, inplace=True)
 
-    other_intra_flow_wlabs1 = feather.read_feather(data_dir1 +"flow_ts/Imputed_other_flow.feather")
+    other_intra_flow_wlabs1 = feather.read_feather(data_dir +"flow_ts/Imputed_other_flow.feather")
     other_intra_flow_wlabs1.drop(other_intra_flow_wlabs1[other_intra_flow_wlabs1['timepoint'] > 511].index, inplace=True)
     other_intra_flow_wlabs1['orlogid_encoded'] = other_intra_flow_wlabs1['orlogid_encoded'].astype('str')
     other_intra_flow_wlabs1 = other_intra_flow_wlabs1.merge(end_of_case_times[['orlogid_encoded', 'endtime']],on="orlogid_encoded")
@@ -648,9 +647,11 @@ if 'flow' in modality_to_use:
     config['p_flow'] = args.lstmFlowDrop
     config['weight_decay_LSTMflowL2'] = args.lstmFlowL2
 
+    breakpoint()
+
 if 'meds' in modality_to_use:
     # reading the med files
-    all_med_data0 = feather.read_feather(data_dir + 'med_ts/intraop_meds_filterd_wave0.feather')
+    all_med_data0 = feather.read_feather(data_dir + 'mv_data/med_ts/intraop_meds_filterd_wave0.feather')
     all_med_data0.drop(all_med_data0[all_med_data0['time'] > 511].index, inplace=True)
     all_med_data0.drop(all_med_data0[all_med_data0['time'] < 0].index, inplace=True)  # there are some negative time points  ## TODO: i think it had some meaning; check this
     all_med_data0 = all_med_data0.merge(end_of_case_times[['orlogid_encoded', 'endtime']], on="orlogid_encoded")
@@ -658,7 +659,7 @@ if 'meds' in modality_to_use:
     all_med_data0.drop(["endtime"], axis=1, inplace=True)
 
 
-    all_med_data1 = feather.read_feather(data_dir1 + 'med_ts/intraop_meds_filterd.feather')
+    all_med_data1 = feather.read_feather(data_dir + 'med_ts/intraop_meds_filterd.feather')
     all_med_data1.drop(all_med_data1[all_med_data1['time'] > 511].index, inplace=True)
     all_med_data1.drop(all_med_data1[all_med_data1['time'] < 0].index, inplace=True)  # there are some negative time points  ## TODO: i think it had some meaning; check this
     all_med_data1['orlogid_encoded'] = all_med_data1['orlogid_encoded'].astype('str')
@@ -691,7 +692,8 @@ if 'meds' in modality_to_use:
 
     if args.drugNamesNo == True:
         # drug_med_id_map = feather.read_feather(data_dir + 'med_ts/med_id_map.feather')
-        drug_med_id_map = pd.read_csv(data_dir + 'med_ts/med_id_map.csv')
+        # drug_med_id_map = pd.read_csv(data_dir + 'med_ts/med_id_map.csv')
+        drug_med_id_map = pd.read_csv(data_dir + 'mv_data/med_ts/mv_drug_names.csv') ## since there are more medications in the MV era, I am using the the med mapping from mv era
         drug_words = None
         word_id_map = None
     else:
@@ -713,9 +715,7 @@ if 'meds' in modality_to_use:
     if args.drugNamesNo == False:
         vocab_len_words = len(word_id_map)
     else:
-        vocab_len_med_ids = len(drug_med_id_map)  ## TODO: fix this once you know where the map file is; done
-        # vocab_len_med_ids = 102
-
+        vocab_len_med_ids = drug_med_id_map['med_integer'].max() + 1
 
     drug_dose = drug_dose.merge(new_index, on="orlogid_encoded", how="inner").drop(["orlogid_encoded"], axis=1).rename({"new_person": "person_integer"}, axis=1)
 
@@ -741,8 +741,7 @@ if 'meds' in modality_to_use:
     if args.drugNamesNo == True:
         value_med_ids = torch.tensor(drug_med_ids['med_integer'].values, dtype=int)
         add_med = 0 in value_med_ids.unique()
-        dense_med_ids = torch.sparse_coo_tensor(torch.transpose(index_med_ids, 0, 1), value_med_ids + add_med,
-                                                dtype=torch.int32)
+        dense_med_ids = torch.sparse_coo_tensor(torch.transpose(index_med_ids, 0, 1), value_med_ids + add_med, dtype=torch.int32)
     else:  ## not considered
         drug_words.dropna(axis=0, inplace=True)
         # convert name and unit+dose data seperately into the required format
@@ -875,7 +874,7 @@ for runNum in range(len(best_5_random_number)):
 
     if 'preops' not in modality_to_use:
         test_size = 0.2
-        valid_size = 0.05  # TODO: change back to 0.00005 for the full dataset
+        valid_size = 0.00005  # TODO: change back to 0.00005 for the full dataset
         y_outcome = outcome_df["outcome"].values
         preops.reset_index(drop=True, inplace=True)
         upto_test_idx = int(test_size * len(preops))
