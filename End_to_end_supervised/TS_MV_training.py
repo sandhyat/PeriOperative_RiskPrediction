@@ -212,10 +212,6 @@ preops1 = pd.read_csv(data_dir + 'epic_preop.csv')
 outcomes1 = pd.read_csv(data_dir + 'epic_outcomes.csv')
 end_of_case_times1 = outcomes1[['orlogid_encoded', 'endtime']]
 
-## keeping the mapping of Sex variable consistent between the two eras
-temp_map = {1:2, 2:1}
-preops0['Sex'] = preops0['Sex'].replace(temp_map)
-
 outcomes = pd.concat([outcomes0, outcomes1], axis=0)
 end_of_case_times = pd.concat([end_of_case_times0, end_of_case_times1], axis=0)
 preops = pd.concat([preops0, preops1], axis=0)
