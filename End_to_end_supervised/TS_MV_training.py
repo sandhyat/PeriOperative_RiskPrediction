@@ -334,8 +334,8 @@ combined_case_set = list(set(outcome_df["orlogid_encoded"].values).intersection(
 #outcome_df = pd.concat([outcome_df, outcome_df1], axis=0)
 #end_of_case_times = pd.concat([end_of_case_times, end_of_case_times1], axis=0)
 
-if False:
-    combined_case_set = np.random.choice(combined_case_set, 2500, replace=False)
+if True:
+    combined_case_set = np.random.choice(combined_case_set, 5000, replace=False)
     #combined_case_set1 = np.random.choice(combined_case_set1, 2500, replace=False)
     #combined_case_set = list(combined_case_set) + list(combined_case_set1)
     #combined_case_set = np.concatenate([combined_case_set, combined_case_set1])
@@ -579,13 +579,13 @@ if 'pmh' in modality_to_use:
 if 'flow' in modality_to_use:
     # flowsheet data
 
-    very_dense_flow0 = feather.read_feather(data_dir +"mv_data/flow_ts/Imputed_very_dense_flow_wave0.feather")
+    very_dense_flow0 = feather.read_feather(data_dir +"mv_data/flow_ts/Imputed_very_dense_flow0.feather")
     very_dense_flow0.drop(very_dense_flow0[very_dense_flow0['timepoint'] > 511].index, inplace=True)
     very_dense_flow0 = very_dense_flow0.merge(end_of_case_times[['orlogid_encoded', 'endtime']], on="orlogid_encoded")
     very_dense_flow0 = very_dense_flow0.loc[very_dense_flow0['endtime'] > very_dense_flow0['timepoint']]
     very_dense_flow0.drop(["endtime"], axis=1, inplace=True)
 
-    other_intra_flow_wlabs0 = feather.read_feather(data_dir +"mv_data/flow_ts/Imputed_other_flow_wave0.feather")
+    other_intra_flow_wlabs0 = feather.read_feather(data_dir +"mv_data/flow_ts/Imputed_other_flow0.feather")
     other_intra_flow_wlabs0.drop(other_intra_flow_wlabs0[other_intra_flow_wlabs0['timepoint'] > 511].index, inplace=True)
     other_intra_flow_wlabs0 = other_intra_flow_wlabs0.merge(end_of_case_times[['orlogid_encoded', 'endtime']],
                                                           on="orlogid_encoded")
@@ -642,8 +642,6 @@ if 'flow' in modality_to_use:
     config['bilstm_flow'] = args.BilstmFlow
     config['p_flow'] = args.lstmFlowDrop
     config['weight_decay_LSTMflowL2'] = args.lstmFlowL2
-
-    breakpoint()
 
 if 'meds' in modality_to_use:
     # reading the med files
@@ -870,7 +868,7 @@ for runNum in range(len(best_5_random_number)):
 
     if 'preops' not in modality_to_use:
         test_size = 0.2
-        valid_size = 0.00005  # TODO: change back to 0.00005 for the full dataset
+        valid_size = 0.05  # TODO: change back to 0.00005 for the full dataset
         y_outcome = outcome_df["outcome"].values
         preops.reset_index(drop=True, inplace=True)
         upto_test_idx = int(test_size * len(preops))
@@ -1024,7 +1022,7 @@ for runNum in range(len(best_5_random_number)):
             config['bilstm_flow'] = param_values['bilstm_flow']
             config['p_flow'] = param_values['p_flow']
             config['weight_decay_LSTMflowL2'] = param_values['weight_decay_LSTMflowL2']
-        config['num_flowsheet_feat'] = total_flowsheet_measures
+        config['num_flowsheet_feat'] = int(total_flowsheet_measures)
 
     if 'meds' in modality_to_use:
         if eval(args.bestModel) == True:
@@ -1140,6 +1138,7 @@ for runNum in range(len(best_5_random_number)):
             data_te['meds'] = [torch.index_select(dense_med_ids, 0, torch.tensor(test_index)).coalesce(),
                                torch.index_select(dense_med_dose, 0, torch.tensor(test_index)).coalesce(),
                                torch.index_select(dense_med_units, 0, torch.tensor(test_index)).coalesce()]
+
     if args.modelType == 'transformer':
         if eval(args.bestModel) == True:
             config['e_dim_flow'] = param_values['e_dim_flow']
@@ -1190,7 +1189,6 @@ for runNum in range(len(best_5_random_number)):
 
     total_train_loss = []
     total_test_loss = []
-
     updating_lr = learn_rate
     best_metric = 1000 # some large number
     lr_schedular_epoch_dict = {}
@@ -1300,9 +1298,7 @@ for runNum in range(len(best_5_random_number)):
                                                           np.ones(len(local_data['flow'][1]._values())),
                                                           local_data['flow'][1].size())
                     local_data['flow'].append(sparse_mask)
-
             data_valid, mod_order_dict = preop_flow_med_bow_model.collate_time_series(local_data, device)
-
             y_pred, reg_loss = model(data_valid[0])
             cls_loss_te = criterion(y_pred.squeeze(-1),data_valid[1].float().to(device)).float()
             test_loss = cls_loss_te + reg_loss
