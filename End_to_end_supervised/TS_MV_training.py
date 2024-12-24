@@ -334,7 +334,7 @@ combined_case_set = list(set(outcome_df["orlogid_encoded"].values).intersection(
 #outcome_df = pd.concat([outcome_df, outcome_df1], axis=0)
 #end_of_case_times = pd.concat([end_of_case_times, end_of_case_times1], axis=0)
 
-if True:
+if False:
     combined_case_set = np.random.choice(combined_case_set, 5000, replace=False)
     #combined_case_set1 = np.random.choice(combined_case_set1, 2500, replace=False)
     #combined_case_set = list(combined_case_set) + list(combined_case_set1)
@@ -891,7 +891,7 @@ for runNum in range(len(best_5_random_number)):
     if 'preops' in modality_to_use:
         # currently sacrificing 5 data points in the valid set and using the test set to finally compute the auroc etc
         preops_tr, preops_val, preops_te, train_index, valid_index, test_index, preops_mask = pps.preprocess_train(
-            preops,
+            preops.copy(deep=True),
             args.task,
             y_outcome=
             outcome_df[
