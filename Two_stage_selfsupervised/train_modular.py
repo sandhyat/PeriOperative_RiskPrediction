@@ -133,7 +133,7 @@ if __name__ == '__main__':
 
 
     # input data directory
-    # datadir = '/mnt/ris/ActFastExports/v1.3.2/'
+    # datadir = '/mnt/ris/ActFastExports/v1.3.3/
     datadir = '/input/'
 
     # output_dir = './'
@@ -324,7 +324,7 @@ if __name__ == '__main__':
             np.random.seed(current_seed_val)
 
             print('Loading data... ', end='')
-            proc_modality_dict_train, proc_modality_dict_test, train_labels, test_labels, outcome_with_orlogid, id_tuple = datautils_modular.load_epic(
+            proc_modality_dict_train, proc_modality_dict_test, train_labels, test_labels, outcome_with_orlogid, id_tuple = datautils_modular.load_epic_mv(
                 args.outcome, modality_to_use, current_seed_val, data_dir=datadir, out_dir=output_dir)
             if args.save_every is not None:
                 unit = 'epoch' if args.epochs is not None else 'iter'
@@ -396,13 +396,14 @@ if __name__ == '__main__':
                 else:
                     config['seed_used']= current_seed_val
                 model = MVCL_f_m_sep(device=device,**config)
-
+                breakpoint()
                 loss_log = model.fit(
                     proc_modality_dict_train,
                     n_epochs=args.epochs,
                     n_iters=args.iters,
                     verbose=True
                 )
+                breakpoint()
                 # association_metrics_dictRel, association_metrics_dictInter = model.associationBTWalertsANDrestmodalities(proc_modality_dict_test)
                 metadata_file = dir_name + '/BestModel_metadata' + str(config['seed_used']) +  '_'+args.outcome + '.json'
                 with open(metadata_file, 'w') as outfile: json.dump(config, outfile)
@@ -412,7 +413,7 @@ if __name__ == '__main__':
                     preds_te, preds_tr, eval_res = eval_classification_sep1(model, proc_modality_dict_train, train_labels, proc_modality_dict_test, test_labels,args.all_rep, args.outcome, int(current_seed_val))
                 else:
                     preds_te, preds_tr, eval_res = eval_regression_sep1(model, proc_modality_dict_train, train_labels, proc_modality_dict_test, test_labels,args.all_rep, args.outcome, int(current_seed_val))
-
+                breakpoint()
             pkl_save(f'{dir_name}/{current_seed_val}_out_tr.pkl', preds_tr)  # test set labels and the predictions are already being saved so saving the tr only
             pkl_save(f'{dir_name}/{current_seed_val}_label_tr.pkl', train_labels)
             print('Evaluation result:', eval_res)
@@ -466,7 +467,7 @@ if __name__ == '__main__':
             print(f"\ntime taken to finish run number: {datetime.timedelta(seconds=t)}\n")
 
     print("Tranquila")
-
+    breakpoint()
     # saving metadata for all best runs in json; decided to save it also as pickle because the nested datatypes were not letting it be serializable
     metadata_filename = dir_name + '/Best_runs_metadata.pickle'
     with open(metadata_filename, 'wb') as outfile:
