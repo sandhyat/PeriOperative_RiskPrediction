@@ -208,7 +208,7 @@ def objective(trial, args):
     # outcome_df = pd.concat([outcome_df, outcome_df1], axis=0)
     # end_of_case_times = pd.concat([end_of_case_times, end_of_case_times1], axis=0)
 
-    if True:
+    if False:
         combined_case_set = np.random.choice(combined_case_set, 5000, replace=False)
         # combined_case_set1 = np.random.choice(combined_case_set1, 2500, replace=False)
         # combined_case_set = list(combined_case_set) + list(combined_case_set1)
@@ -241,7 +241,7 @@ def objective(trial, args):
 
     if 'preops' not in modality_to_use:
         test_size = 0.2
-        valid_size = 0.05  # change back to 0.00005 for the full dataset
+        valid_size = 0.00005  # change back to 0.00005 for the full dataset
         y_outcome = outcome_df["outcome"].values
         preops.reset_index(drop=True, inplace=True)
         upto_test_idx = int(test_size * len(preops))
@@ -300,7 +300,7 @@ def objective(trial, args):
         y_outcome = outcome_df["outcome"].values
         # currently sacrificing 5 data points in the valid set and using the test set to finally compute the auroc etc
         preops_tr, preops_val, preops_te, train_index, valid_index, test_index, preops_mask = pps.preprocess_train(
-            preops,args.task, y_outcome=y_outcome, binary_outcome=binary_outcome, valid_size=0.05, random_state=args.randomSeed, input_dr=data_dir, output_dr=out_dir)  # change back to 0.00005
+            preops,args.task, y_outcome=y_outcome, binary_outcome=binary_outcome, valid_size=0.00005, random_state=args.randomSeed, input_dr=data_dir, output_dr=out_dir)  # change back to 0.00005
 
         if (binary_outcome == True) and (y_outcome.dtype != 'float64'):
             assert outcome_df.iloc[valid_index][
@@ -1174,7 +1174,7 @@ if __name__ == "__main__":
 
     parser.add_argument("--randomSeed", default=100, type=int)
     parser.add_argument("--task", default="icu")
-    parser.add_argument("--numtrialsHP", default=2, type=int)
+    parser.add_argument("--numtrialsHP", default=15, type=int)
 
     args_input = parser.parse_args()
 
@@ -1213,7 +1213,6 @@ if __name__ == "__main__":
     complete_trials = study.get_trials(deepcopy=False, states=[TrialState.COMPLETE])
 
     trial_summary_df = study.trials_dataframe()  # this
-    breakpoint()
     hpcsv = os.path.join('/output/HP_output/', std_name+ datetime.now().strftime("%y-%m-%d") + "_HP_df.csv")
     trial_summary_df.to_csv(hpcsv, header=True, index=False)
 
