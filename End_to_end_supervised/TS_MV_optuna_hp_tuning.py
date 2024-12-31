@@ -35,7 +35,7 @@ def objective(trial, args):
 
     if eval('args.pmhProblist') == True:
         modality_to_use.append('pmh')
-        modality_to_use.append('problist')
+        #modality_to_use.append('problist')
 
     if eval('args.homemeds') == True:
         modality_to_use.append('homemeds')
@@ -1186,7 +1186,7 @@ if __name__ == "__main__":
 
     if eval('args_input.pmhProblist') == True:
         modality_to_use.append('pmh')
-        modality_to_use.append('problist')
+        #modality_to_use.append('problist')
 
     if eval('args_input.homemeds') == True:
         modality_to_use.append('homemeds')
